@@ -90,8 +90,18 @@ public final class RemoteMicTester {
             boolean preferredAccepted = record.setPreferredDevice(target);
             Log.i(TAG, "RC In test: source=" + sourceName + " setPreferredDevice=" + preferredAccepted);
             record.startRecording();
-            Thread.sleep(450L);
-            AudioDeviceInfo routed = record.getRoutedDevice();
+            postStatus("Запись запущена. Удерживай кнопку микрофона на пульте — жду переключения на RC In…");
+            AudioDeviceInfo routed = null;
+            long routeDeadline = System.currentTimeMillis() + 6000L;
+            while (running && System.currentTimeMillis() < routeDeadline) {
+                routed = record.getRoutedDevice();
+                if (isRcInput(routed, target)) break;
+                Thread.sleep(150L);
+            }
+            if (!running) {
+                finishMessage = "Тест остановлен.";
+                return;
+            }
             Log.i(TAG, "RC In test: actual route=" + describe(routed));
             if (!isRcInput(routed, target)) {
                 finishMessage = "Android не направил запись в RC In.\n" +
