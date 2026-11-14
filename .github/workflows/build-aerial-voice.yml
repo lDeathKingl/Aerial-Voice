@@ -62,7 +62,7 @@ jobs:
           name: aerial-voice-vosk-test-0.4.0
           path: |
             dist/aerial-voice-vosk-test-debug.apk
-            dist/aerial-voice-vosk-test-bundle.zip
+            dist/aerial-voice-vosk-test-0.4.0.zip
             dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md
