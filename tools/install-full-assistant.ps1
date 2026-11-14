@@ -50,7 +50,36 @@ $r = Invoke-Adb @("connect", $Tv)
 Show-Output $r
 if ($r.ExitCode -ne 0) { throw "Не удалось подключиться к телевизору." }
 
-Write-Host "2/6 Обновляю Aerial Voice 0.6.0..." -ForegroundColor Cyan
+# Export the old debug app's visible conversation history before installing the new package.
+$historyTemp = Join-Path $env:TEMP ("aerial-voice-history-" + [Guid]::NewGuid().ToString("N") + ".json")
+$historyReady = $false
+$oldPackages = @("app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.aerialvoice")
+foreach ($oldPackage in $oldPackages) {
+    $packageCheck = Invoke-Adb @("shell", "pm", "path", $oldPackage)
+    if (($packageCheck.Output -join "`n") -notmatch "package:") { continue }
+    $oldPrefs = Invoke-Adb @("exec-out", "run-as", $oldPackage, "cat", "shared_prefs/aerial_voice_settings.xml")
+    if ($oldPrefs.ExitCode -ne 0) { continue }
+    try {
+        [xml]$prefsXml = ($oldPrefs.Output -join [Environment]::NewLine)
+        $historyNode = $prefsXml.SelectSingleNode("/map/string[@name='conversation_history_json']")
+        if ($null -eq $historyNode -or [string]::IsNullOrWhiteSpace($historyNode.InnerText)) { continue }
+        $historyItems = @(ConvertFrom-Json -InputObject $historyNode.InnerText)
+        if ($historyItems.Count -gt 30) { $historyItems = @($historyItems | Select-Object -Last 30) }
+        $historyJson = ConvertTo-Json -InputObject $historyItems -Depth 8 -Compress
+        [System.IO.File]::WriteAllText($historyTemp, $historyJson, ([System.Text.UTF8Encoding]::new($false)))
+        $historyReady = $true
+        Write-Host "Найдена история в старом приложении ($($historyItems.Count) сообщений). Она будет перенесена." -ForegroundColor Green
+        break
+    }
+    catch {
+        Write-Warning "Не удалось разобрать историю старого приложения; старое приложение останется нетронутым."
+    }
+}
+if (-not $historyReady) {
+    Write-Host "Старую историю автоматически прочитать не удалось. Старое приложение и его данные останутся на месте." -ForegroundColor Yellow
+}
+
+Write-Host "2/6 Устанавливаю Aerial Voice 0.6.0 рядом со старой версией..." -ForegroundColor Cyan
 $r = Invoke-Adb @("install", "-r", $VoiceApk)
 Show-Output $r
 if ($r.ExitCode -ne 0) {
@@ -60,18 +89,51 @@ if ($r.ExitCode -ne 0) {
     throw "Aerial Voice не установился. Старое приложение и его данные не удалялись."
 }
 
+$remoteDir = "/sdcard/Android/data/$VoicePackage/files"
 $remoteBootstrapFile = ""
-if (-not [string]::IsNullOrWhiteSpace($BootstrapKeyFile)) {
-    if (-not (Test-Path -LiteralPath $BootstrapKeyFile)) {
-        throw "Файл автоматического переноса GigaChat key не найден: $BootstrapKeyFile"
+$remoteHistoryFile = ""
+$temporaryKeyFile = ""
+$keyFileToPush = $BootstrapKeyFile
+
+if ([string]::IsNullOrWhiteSpace($keyFileToPush)) {
+    Write-Host ""
+    Write-Host "Старый Authorization Key зашифрован Android Keystore и не может быть прочитан новым пакетом." -ForegroundColor Yellow
+    $secureKey = Read-Host "Вставь Authorization Key GigaChat для переноса (Enter — пропустить)" -AsSecureString
+    if ($secureKey.Length -gt 0) {
+        $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+        try {
+            $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer)
+            $temporaryKeyFile = Join-Path $env:TEMP ("aerial-voice-key-" + [Guid]::NewGuid().ToString("N") + ".txt")
+            [System.IO.File]::WriteAllText($temporaryKeyFile, $plainKey, ([System.Text.UTF8Encoding]::new($false)))
+            $keyFileToPush = $temporaryKeyFile
+        }
+        finally {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPointer)
+            $plainKey = $null
+        }
     }
-    $remoteDir = "/sdcard/Android/data/$VoicePackage/files"
+}
+
+$null = Invoke-Adb @("shell", "mkdir", "-p", $remoteDir)
+if (-not [string]::IsNullOrWhiteSpace($keyFileToPush)) {
+    if (-not (Test-Path -LiteralPath $keyFileToPush)) {
+        throw "Файл Authorization Key не найден: $keyFileToPush"
+    }
     $remoteBootstrapFile = "$remoteDir/aerial_voice_bootstrap_key.txt"
-    $null = Invoke-Adb @("shell", "mkdir", "-p", $remoteDir)
-    $r = Invoke-Adb @("push", $BootstrapKeyFile, $remoteBootstrapFile)
+    $r = Invoke-Adb @("push", $keyFileToPush, $remoteBootstrapFile)
     Show-Output $r
     if ($r.ExitCode -ne 0) { throw "Не удалось передать GigaChat key на телевизор. Старое приложение не тронуто." }
 }
+if ($temporaryKeyFile -and (Test-Path -LiteralPath $temporaryKeyFile)) {
+    Remove-Item -LiteralPath $temporaryKeyFile -Force
+}
+if ($historyReady) {
+    $remoteHistoryFile = "$remoteDir/aerial_voice_bootstrap_history.json"
+    $r = Invoke-Adb @("push", $historyTemp, $remoteHistoryFile)
+    Show-Output $r
+    if ($r.ExitCode -ne 0) { Write-Warning "Не удалось передать историю на телевизор; старое приложение и история в нём не удалены." }
+}
+if (Test-Path -LiteralPath $historyTemp) { Remove-Item -LiteralPath $historyTemp -Force }
 
 Write-Host "3/6 Выдаю необходимые разрешения Aerial Voice..." -ForegroundColor Cyan
 $r = Invoke-Adb @("shell", "pm", "grant", $VoicePackage, "android.permission.RECORD_AUDIO")
@@ -118,7 +180,7 @@ Show-Output $r
 if ($r.ExitCode -ne 0) { Write-Warning "Открой Aerial Voice вручную из списка приложений." }
 
 if (-not [string]::IsNullOrWhiteSpace($remoteBootstrapFile)) {
-    Write-Host "Проверяю автоматический импорт GigaChat key..." -ForegroundColor Cyan
+    Write-Host "Проверяю импорт GigaChat key..." -ForegroundColor Cyan
     $imported = $false
     for ($i = 0; $i -lt 25; $i++) {
         Start-Sleep -Seconds 1
@@ -131,13 +193,30 @@ if (-not [string]::IsNullOrWhiteSpace($remoteBootstrapFile)) {
         Write-Host "GigaChat key импортирован и зашифрован Android Keystore." -ForegroundColor Green
     }
 }
+if (-not [string]::IsNullOrWhiteSpace($remoteHistoryFile)) {
+    Write-Host "Проверяю импорт истории..." -ForegroundColor Cyan
+    $historyImported = $false
+    for ($i = 0; $i -lt 25; $i++) {
+        Start-Sleep -Seconds 1
+        $check = Invoke-Adb @("shell", "test", "-e", $remoteHistoryFile)
+        if ($check.ExitCode -ne 0) { $historyImported = $true; break }
+    }
+    if ($historyImported) {
+        Write-Host "История импортирована в Aerial Voice 0.6.0." -ForegroundColor Green
+    } else {
+        Write-Warning "Временный файл истории ещё не удалён. Проверь экран «История» после запуска."
+    }
+}
 
 Write-Host "6/6 Проверяю установленные версии..." -ForegroundColor Cyan
 $r = Invoke-Adb @("shell", "dumpsys", "package", $VoicePackage)
 $r.Output | Where-Object { $_ -match "versionName|versionCode" } | ForEach-Object { Write-Host $_ }
 
 Write-Host ""
-Write-Host "Aerial Voice 0.6.0 установлен. Существующие данные и сохранённый GigaChat key не удалялись." -ForegroundColor Green
+Write-Host "Aerial Voice 0.6.0 установлен рядом со старым приложением. Старые данные и старый GigaChat key не удалялись." -ForegroundColor Green
+if ([string]::IsNullOrWhiteSpace($remoteBootstrapFile)) {
+    Write-Warning "Новый пакет не получил Authorization Key. Добавь его в «Настройки GigaChat»; старый ключ остаётся в старом приложении."
+}
 if ($bridgeInstalled) {
     Write-Host "Korobovo с F5 bridge установлен. Bridge перехватывает только F5 и только когда HomeGuard сам фильтрует клавиши." -ForegroundColor Green
 } else {
