@@ -24,7 +24,7 @@ Write-Host 'Выдача разрешения на микрофон...' -Foregro
 adb shell pm grant $Package android.permission.RECORD_AUDIO
 if ($LASTEXITCODE -ne 0) { Write-Warning 'Не удалось автоматически выдать RECORD_AUDIO. Разреши микрофон на телевизоре.' }
 Write-Host 'Запуск Aerial Voice — RC In Test...' -ForegroundColor Cyan
-adb shell am start -n "$Package/.MainActivity"
+adb shell monkey -p $Package 1
 Start-Sleep -Seconds 2
 Write-Host "Проверка установки:" -ForegroundColor Green
 adb shell dumpsys package $Package | findstr /i 'versionName versionCode'

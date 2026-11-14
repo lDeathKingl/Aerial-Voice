@@ -112,7 +112,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("РУССКИЙ ГОЛОСОВОЙ ПОМОЩНИК · 0.1.0", 13, MUTED, true);
+        TextView version = text("ДИАГНОСТИКА МИКРОФОНА · 0.2.0", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
