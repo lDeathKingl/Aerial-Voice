@@ -104,6 +104,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         getWindow().setNavigationBarColor(BG);
         String selectedEngine = getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_engine", "");
         speech = new SpeechEngine(this, this, selectedEngine);
+        speech.setTtsVoice(getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_voice", ""));
         String bootstrapStatus = importBootstrapKey();
         applyVoiceSettings();
         loadHistory();
@@ -743,9 +744,27 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         form.addView(rate);
         form.addView(label("Высота голоса (1.0 — обычная)"));
         form.addView(pitch);
+        List<SpeechEngine.VoiceChoice> voiceOptions = speech == null
+                ? new ArrayList<>() : speech.getAvailableTtsVoices();
+        List<String> voiceLabels = new ArrayList<>();
+        voiceLabels.add("Автоматический голос движка");
+        for (SpeechEngine.VoiceChoice option : voiceOptions) voiceLabels.add(option.label);
+        Spinner voicePicker = new Spinner(this);
+        ArrayAdapter<String> voiceAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, voiceLabels);
+        voiceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        voicePicker.setAdapter(voiceAdapter);
+        String selectedVoice = prefs.getString("tts_voice", "");
+        int voiceIndex = 0;
+        for (int i = 0; i < voiceOptions.size(); i++) {
+            if (voiceOptions.get(i).name.equals(selectedVoice)) voiceIndex = i + 1;
+        }
+        voicePicker.setSelection(voiceIndex);
         form.addView(label("Голосовой движок"));
         form.addView(enginePicker);
-        form.addView(label("Выбери установленный движок, например RHVoice. Изменения применяются к русской озвучке телевизора."));
+        form.addView(label("Конкретный русский голос"));
+        form.addView(voicePicker);
+        form.addView(label("Выбери установленный движок и русский голос. Если меняешь движок, сначала сохрани его и открой настройки голоса повторно — список голосов обновится."));
         Button testVoice = button("Проверить русскую озвучку", false);
         form.addView(testVoice);
         AlertDialog voiceDialog = new AlertDialog.Builder(this).setTitle("Настройки голоса").setView(form)
@@ -759,9 +778,13 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                         int engineIndex = enginePicker.getSelectedItemPosition();
                         String newEngine = engineIndex <= 0 || engineIndex - 1 >= engineOptions.size()
                                 ? "" : engineOptions.get(engineIndex - 1).packageName;
+                        int voicePosition = voicePicker.getSelectedItemPosition();
+                        String newVoice = voicePosition <= 0 || voicePosition - 1 >= voiceOptions.size()
+                                ? "" : voiceOptions.get(voicePosition - 1).name;
                         prefs.edit().putFloat("tts_rate", newRate).putFloat("tts_pitch", newPitch)
-                                .putString("tts_engine", newEngine).apply();
+                                .putString("tts_engine", newEngine).putString("tts_voice", newVoice).apply();
                         speech.setVoiceSettings(newRate, newPitch);
+                        speech.setTtsVoice(newVoice);
                         speech.setTtsEngine(newEngine);
                         setStatus("Настройки голоса сохранены", GREEN);
                         speech.speak("Настройки голоса сохранены.");

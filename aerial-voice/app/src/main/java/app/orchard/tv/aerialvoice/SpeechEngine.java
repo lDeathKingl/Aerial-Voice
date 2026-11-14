@@ -9,6 +9,7 @@ import android.media.MediaRecorder;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
@@ -57,6 +58,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private volatile String ttsEngineName = "не определён";
     private volatile String ttsLanguageStatus = "не проверен";
     private volatile String requestedTtsEngine = "";
+    private volatile String requestedTtsVoice = "";
     private volatile float speechRate = 1.0f;
     private volatile float speechPitch = 1.0f;
 
@@ -140,6 +142,67 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         public EngineChoice(String packageName, String label) {
             this.packageName = packageName;
             this.label = label;
+        }
+    }
+
+    public static final class VoiceChoice {
+        public final String name;
+        public final String label;
+        public VoiceChoice(String name, String label) {
+            this.name = name;
+            this.label = label;
+        }
+    }
+
+    /** Returns Russian voices exposed by the currently selected TTS engine. */
+    public java.util.List<VoiceChoice> getAvailableTtsVoices() {
+        java.util.List<VoiceChoice> result = new java.util.ArrayList<>();
+        if (tts == null) return result;
+        try {
+            java.util.Set<Voice> voices = tts.getVoices();
+            if (voices == null) return result;
+            for (Voice voice : voices) {
+                if (voice == null || voice.getLocale() == null
+                        || !"ru".equalsIgnoreCase(voice.getLocale().getLanguage())) continue;
+                String locale = voice.getLocale().toLanguageTag();
+                String quality = voice.getQuality() >= Voice.QUALITY_HIGH ? "высокое качество" : "стандартное качество";
+                String network = voice.isNetworkConnectionRequired() ? " · нужен интернет" : " · офлайн";
+                result.add(new VoiceChoice(voice.getName(),
+                        voice.getName() + " · " + locale + " · " + quality + network));
+            }
+            java.util.Collections.sort(result, (a, b) -> a.label.compareToIgnoreCase(b.label));
+        } catch (Exception e) {
+            Log.w(TAG, "Could not enumerate TTS voices", e);
+        }
+        return result;
+    }
+
+    public void setTtsVoice(String voiceName) {
+        requestedTtsVoice = voiceName == null ? "" : voiceName.trim();
+        main.post(this::applyRequestedTtsVoice);
+    }
+
+    private void applyRequestedTtsVoice() {
+        if (tts == null || !ttsReady || requestedTtsVoice.isEmpty()) return;
+        try {
+            java.util.Set<Voice> voices = tts.getVoices();
+            if (voices == null) return;
+            for (Voice voice : voices) {
+                if (voice != null && requestedTtsVoice.equals(voice.getName())
+                        && voice.getLocale() != null
+                        && "ru".equalsIgnoreCase(voice.getLocale().getLanguage())) {
+                    int result = tts.setVoice(voice);
+                    if (result == TextToSpeech.ERROR) {
+                        Log.w(TAG, "TTS rejected selected voice " + requestedTtsVoice);
+                    } else {
+                        Log.i(TAG, "Selected TTS voice " + requestedTtsVoice);
+                    }
+                    return;
+                }
+            }
+            Log.w(TAG, "Selected TTS voice is unavailable in current engine: " + requestedTtsVoice);
+        } catch (Exception e) {
+            Log.w(TAG, "Could not apply selected TTS voice", e);
         }
     }
 
@@ -521,6 +584,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 tts.setSpeechRate(speechRate);
                 tts.setPitch(speechPitch);
                 ttsState = "готова";
+                applyRequestedTtsVoice();
             } else if (language == TextToSpeech.LANG_MISSING_DATA) {
                 ttsState = "нет данных русского языка";
             } else {
