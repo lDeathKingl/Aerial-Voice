@@ -80,7 +80,7 @@ bridge = '''    // AERIAL_VOICE_BRIDGE_V2: this only runs when Aerial's own key-
     }
 
     private fun openAerialVoice(startListening: Boolean, stopListening: Boolean, continuous: Boolean) {
-        val candidates = listOf("app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.aerialvoice")
+        val candidates = listOf("app.orchard.tv.aerialvoice.mictest06", "app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.aerialvoice")
         val targetPackage = candidates.firstOrNull { pkg ->
             runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
         }
@@ -122,7 +122,7 @@ xml = manifest.read_text(encoding="utf-8")
 queries_anchor = "    <queries>\n"
 if xml.count(queries_anchor) != 1:
     raise SystemExit("Unexpected AndroidManifest.xml: cannot uniquely locate <queries>.")
-for package in ("app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.aerialvoice"):
+for package in ("app.orchard.tv.aerialvoice.mictest06", "app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.aerialvoice"):
     query = f'        <package android:name="{package}" />\n'
     if query not in xml:
         xml = xml.replace(queries_anchor, queries_anchor + query, 1)

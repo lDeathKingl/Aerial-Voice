@@ -44,6 +44,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private static final int REQUEST_AUDIO = 4101;
     private static final String PREFS = "aerial_voice_settings";
     private static final String HISTORY_KEY = "conversation_history_json";
+    private static final String ARCHIVE_KEY = "conversation_archive_json";
     private static final int MAX_HISTORY_MESSAGES = 30;
     private static final String EXTRA_START_LISTENING = "app.orchard.tv.aerialvoice.START_LISTENING";
     private static final String EXTRA_STOP_LISTENING = "app.orchard.tv.aerialvoice.STOP_LISTENING";
@@ -184,12 +185,14 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         boolean start = intent.getBooleanExtra(EXTRA_START_LISTENING, false);
         boolean stop = intent.getBooleanExtra(EXTRA_STOP_LISTENING, false);
         if (start) {
+            remotePttActive = true;
             pendingRemoteStart = true;
             pendingRemoteStop = false;
             handler.removeCallbacks(pendingRemoteStartRunnable);
             handler.postDelayed(pendingRemoteStartRunnable, 320L);
         }
         if (stop) {
+            remotePttActive = false;
             handler.removeCallbacks(pendingRemoteStartRunnable);
             if (speech != null && speech.isListening()) {
                 speech.stopListening();
@@ -685,6 +688,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     }
 
     private void clearHistory() {
+        archiveCurrentHistory();
         while (history.length() > 0) history.remove(0);
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(HISTORY_KEY).apply();
         if (transcriptText != null) transcriptText.setText("История очищена. Можем начать новый разговор.");
@@ -1047,23 +1051,59 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     private void showHistory() {
         StringBuilder content = new StringBuilder();
-        for (int i = 0; i < history.length(); i++) {
-            JSONObject item = history.optJSONObject(i);
-            if (item == null) continue;
-            String role = item.optString("role", "");
-            String message = item.optString("content", "");
-            content.append("user".equals(role) ? "ТЫ: " : "AERIAL: ").append(message).append("\n\n");
-        }
-        if (content.length() == 0) content.append("История пока пустая.");
+        try {
+            JSONArray archives = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getString(ARCHIVE_KEY, "[]"));
+            for (int sessionIndex = 0; sessionIndex < archives.length(); sessionIndex++) {
+                JSONObject session = archives.optJSONObject(sessionIndex);
+                if (session == null) continue;
+                long timestamp = session.optLong("timestamp", 0L);
+                String date = timestamp > 0
+                        ? new java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault())
+                                .format(new java.util.Date(timestamp))
+                        : "Предыдущий диалог";
+                content.append("=== ").append(date).append(" ===\n");
+                JSONArray messages = session.optJSONArray("messages");
+                if (messages != null) appendHistoryMessages(content, messages);
+                content.append('\n');
+            }
+        } catch (Exception ignored) { }
+        content.append("=== ТЕКУЩИЙ ДИАЛОГ ===\n");
+        appendHistoryMessages(content, history);
+        if (content.toString().trim().isEmpty()) content.append("История пока пустая.");
         TextView view = text(content.toString(), 16, TEXT, false);
         view.setPadding(dp(14), dp(10), dp(14), dp(10));
         ScrollView scroll = new ScrollView(this);
         scroll.addView(view);
-        new AlertDialog.Builder(this).setTitle("История разговора")
+        new AlertDialog.Builder(this).setTitle("История разговоров")
                 .setView(scroll)
                 .setPositiveButton("Закрыть", null)
-                .setNeutralButton("Очистить", (d, w) -> confirmClearHistory())
+                .setNeutralButton("Очистить текущий диалог", (d, w) -> confirmClearHistory())
                 .show();
+    }
+
+    private void appendHistoryMessages(StringBuilder out, JSONArray messages) {
+        for (int i = 0; i < messages.length(); i++) {
+            JSONObject item = messages.optJSONObject(i);
+            if (item == null) continue;
+            String role = item.optString("role", "");
+            String message = item.optString("content", "");
+            out.append("user".equals(role) ? "ТЫ: " : "AERIAL: ").append(message).append('\n');
+        }
+    }
+
+    private void archiveCurrentHistory() {
+        if (history.length() == 0) return;
+        try {
+            android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+            JSONArray archives = new JSONArray(prefs.getString(ARCHIVE_KEY, "[]"));
+            JSONObject session = new JSONObject()
+                    .put("timestamp", System.currentTimeMillis())
+                    .put("messages", new JSONArray(history.toString()));
+            archives.put(session);
+            while (archives.length() > 10) archives.remove(0);
+            prefs.edit().putString(ARCHIVE_KEY, archives.toString()).apply();
+        } catch (Exception ignored) { }
     }
 
     private void showMemorySettings() {

@@ -1,11 +1,12 @@
 param(
     [string]$Tv = "192.168.2.89:5555",
     [string]$VoiceApk = "",
-    [string]$KorobovoApk = ""
+    [string]$KorobovoApk = "",
+    [string]$BootstrapKeyFile = ""
 )
 
 $ErrorActionPreference = "Stop"
-$VoicePackage = "app.orchard.tv.aerialvoice.mictest"
+$VoicePackage = "app.orchard.tv.aerialvoice.mictest06"
 $KorobovoPackage = "app.orchard.tv.korobovo"
 $MediaListener = "$VoicePackage/app.orchard.tv.aerialvoice.MediaSessionBridge"
 
@@ -35,7 +36,7 @@ if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($VoiceApk)) {
-    $VoiceApk = Join-Path $PSScriptRoot "aerial-voice-mictest-debug.apk"
+    $VoiceApk = Join-Path $PSScriptRoot "aerial-voice-mictest06-debug.apk"
 }
 if ([string]::IsNullOrWhiteSpace($KorobovoApk)) {
     $KorobovoApk = Join-Path $PSScriptRoot "aerial-korobovo-voice-bridge.apk"
@@ -57,6 +58,19 @@ if ($r.ExitCode -ne 0) {
         throw "Подпись Aerial Voice отличается от установленной. Я НЕ удалял приложение и НЕ трогал его данные. Остановись и пришли скриншот."
     }
     throw "Aerial Voice не установился. Старое приложение и его данные не удалялись."
+}
+
+$remoteBootstrapFile = ""
+if (-not [string]::IsNullOrWhiteSpace($BootstrapKeyFile)) {
+    if (-not (Test-Path -LiteralPath $BootstrapKeyFile)) {
+        throw "Файл автоматического переноса GigaChat key не найден: $BootstrapKeyFile"
+    }
+    $remoteDir = "/sdcard/Android/data/$VoicePackage/files"
+    $remoteBootstrapFile = "$remoteDir/aerial_voice_bootstrap_key.txt"
+    $null = Invoke-Adb @("shell", "mkdir", "-p", $remoteDir)
+    $r = Invoke-Adb @("push", $BootstrapKeyFile, $remoteBootstrapFile)
+    Show-Output $r
+    if ($r.ExitCode -ne 0) { throw "Не удалось передать GigaChat key на телевизор. Старое приложение не тронуто." }
 }
 
 Write-Host "3/6 Выдаю необходимые разрешения Aerial Voice..." -ForegroundColor Cyan
@@ -102,6 +116,21 @@ Write-Host "5/6 Запускаю Aerial Voice..." -ForegroundColor Cyan
 $r = Invoke-Adb @("shell", "monkey", "-p", $VoicePackage, "1")
 Show-Output $r
 if ($r.ExitCode -ne 0) { Write-Warning "Открой Aerial Voice вручную из списка приложений." }
+
+if (-not [string]::IsNullOrWhiteSpace($remoteBootstrapFile)) {
+    Write-Host "Проверяю автоматический импорт GigaChat key..." -ForegroundColor Cyan
+    $imported = $false
+    for ($i = 0; $i -lt 25; $i++) {
+        Start-Sleep -Seconds 1
+        $check = Invoke-Adb @("shell", "test", "-e", $remoteBootstrapFile)
+        if ($check.ExitCode -ne 0) { $imported = $true; break }
+    }
+    if (-not $imported) {
+        Write-Warning "Приложение пока не удалило временный файл ключа. Не запускай установщик повторно; пришли скриншот Aerial Voice."
+    } else {
+        Write-Host "GigaChat key импортирован и зашифрован Android Keystore." -ForegroundColor Green
+    }
+}
 
 Write-Host "6/6 Проверяю установленные версии..." -ForegroundColor Cyan
 $r = Invoke-Adb @("shell", "dumpsys", "package", $VoicePackage)

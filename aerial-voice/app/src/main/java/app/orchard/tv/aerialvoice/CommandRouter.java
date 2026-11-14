@@ -1,5 +1,7 @@
 package app.orchard.tv.aerialvoice;
 
+import android.app.Activity;
+import android.app.SearchManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;

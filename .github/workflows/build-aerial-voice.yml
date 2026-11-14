@@ -45,9 +45,16 @@ jobs:
           path: ~/.android/debug.keystore
           key: aerial-voice-debug-keystore-v1
 
-      - name: Build main and micTest Aerial Voice APKs
+      - name: Create stable debug signing key if cache is empty
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build full and micTest06 Aerial Voice APKs
         working-directory: aerial-voice
-        run: gradle --no-daemon clean :app:assembleMainDebug :app:assembleMicTestDebug
+        run: gradle --no-daemon clean :app:assembleFullDebug :app:assembleMicTestDebug
 
       - name: Get Aerial 1.95 and Korobovo weather patch
         run: |
@@ -78,21 +85,21 @@ jobs:
       - name: Prepare combined release bundle
         run: |
           mkdir -p dist
-          cp aerial-voice/app/build/outputs/apk/main/debug/app-main-debug.apk dist/aerial-voice-main-debug.apk
-          cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest-debug.apk
+          cp aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk dist/aerial-voice-full-debug.apk
+          cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest06-debug.apk
           cp korobovo-upstream/app/build/outputs/apk/guard/release/*.apk dist/aerial-korobovo-voice-bridge.apk
           cp tools/install-full-assistant.ps1 dist/
           cp README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-0.6.0-full-assistant.zip aerial-voice-main-debug.apk aerial-voice-mictest-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
+          zip -r aerial-voice-0.6.0-full-assistant.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
 
       - name: Upload combined APKs and installer
         uses: actions/upload-artifact@v4
         with:
           name: aerial-voice-0.6.0-full-assistant
           path: |
-            dist/aerial-voice-main-debug.apk
-            dist/aerial-voice-mictest-debug.apk
+            dist/aerial-voice-full-debug.apk
+            dist/aerial-voice-mictest06-debug.apk
             dist/aerial-korobovo-voice-bridge.apk
             dist/aerial-voice-0.6.0-full-assistant.zip
             dist/README.md

@@ -8,13 +8,14 @@ android {
 
     flavorDimensions 'purpose'
     productFlavors {
-        main {
+        full {
             dimension 'purpose'
         }
         micTest {
             dimension 'purpose'
-            applicationIdSuffix '.mictest'
-            versionNameSuffix '-mictest'
+            applicationIdSuffix '.mictest06'
+            versionNameSuffix '-mictest06'
+            resValue 'string', 'app_name', 'Aerial Voice 0.6.0'
         }
     }
     defaultConfig {

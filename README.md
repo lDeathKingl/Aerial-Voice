@@ -60,7 +60,7 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 
 ## Установка диагностической версии
 
-Сборка 0.3.0 устанавливается **рядом** с текущим Aerial Voice под отдельным package ID `app.orchard.tv.aerialvoice.mictest`. Она не обновляет и не удаляет установленное основное приложение.
+Сборка 0.3.0 устанавливается **рядом** с текущим Aerial Voice под отдельным package ID `app.orchard.tv.aerialvoice.mictest06`. Она не обновляет и не удаляет установленное основное приложение.
 
 1. Скачай artifact **aerial-voice-vosk-test-0.3.0** из GitHub Actions.
 2. Распакуй `aerial-voice-vosk-test-bundle.zip` в отдельную папку.
@@ -70,7 +70,7 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 .\install-mic-test.ps1 -Tv 192.168.2.89:5555
 ```
 
-Если IP телевизора изменился, замени адрес. Установщик меняет только диагностический пакет `app.orchard.tv.aerialvoice.mictest`; текущее Aerial Voice, Aerial Korobovo, HomeGuard и Xiaomi VoiceControl не затрагиваются.
+Если IP телевизора изменился, замени адрес. Установщик меняет только диагностический пакет `app.orchard.tv.aerialvoice.mictest06`; текущее Aerial Voice, Aerial Korobovo, HomeGuard и Xiaomi VoiceControl не затрагиваются.
 
 ## Проверка офлайн-распознавания Vosk
 
@@ -153,7 +153,7 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 ## Решение конфликта подписи при установке
 
 
-Если при установке появляется `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, скрипт распознает конфликт подписи и спросит разрешение удалить **только** старое тестовое приложение `app.orchard.tv.aerialvoice.mictest`. Его локальные данные будут удалены; основное приложение Aerial Voice не затрагивается.
+Если при установке появляется `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, скрипт распознает конфликт подписи и спросит разрешение удалить **только** старое тестовое приложение `app.orchard.tv.aerialvoice.mictest06`. Его локальные данные будут удалены; основное приложение Aerial Voice не затрагивается.
 
 
 ### Диагностика зависания загрузки
@@ -222,4 +222,4 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 - Долговременная память заполняется только явно сохранёнными пользователем фактами; сырые аудиоданные не сохраняются.
 
 ### Установка полного комплекта
-Скачай artifact `aerial-voice-0.6.0-full-assistant`, распакуй ZIP и запусти `install-full-assistant.ps1` в PowerShell. Скрипт обновляет Aerial Voice и пытается обновить Korobovo bridge. При несовпадении подписи он останавливается/предупреждает и никогда не удаляет старые приложения или их данные.
+Для первичной установки используй персональный `install-full-assistant-with-key.ps1` из подготовленного для телевизора ZIP: он автоматически передаёт сохранённый GigaChat Authorization Key в новый пакет `.mictest06`, после чего приложение шифрует его в Android Keystore. Универсальный `install-full-assistant.ps1` принимает `-BootstrapKeyFile` и подходит для последующих установок/обновлений. Скрипт обновляет Aerial Voice и пытается обновить Korobovo bridge. При несовпадении подписи он предупреждает и никогда не удаляет старые приложения или их данные. Старый `.mictest` остаётся установленным как резервная копия.

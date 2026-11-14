@@ -84,7 +84,7 @@
 
 - Пользователь проверил штатный голосовой поиск Xiaomi: экран голосового поиска открывается, речь распознаётся на английском и китайском, но не на русском.
 - Это подтверждает, что микрофон пульта и штатный аудиотракт Xiaomi работают для поддерживаемых штатным распознавателем языков. Это **не** доказывает, что стороннее приложение может напрямую читать тот же поток.
-- Следующий этап — отдельная сборка `micTest`, package ID `app.orchard.tv.aerialvoice.mictest`. Она не заменяет установленный `app.orchard.tv.aerialvoice`.
+- Следующий этап — отдельная сборка `micTest`, package ID `app.orchard.tv.aerialvoice.mictest06`. Она не заменяет установленный `app.orchard.tv.aerialvoice`.
 - В диагностическом окне доступны два теста прямого `AudioRecord`: `VOICE_RECOGNITION` и `MIC`. Оба запрашивают `RC In`, затем проверяют фактический маршрут. Если маршрут уходит на Built-In Mic или не подтверждается, запись прекращается.
 - Показывается уровень сигнала в реальном времени; аудио не сохраняется и не отправляется.
 - Окно также запрашивает список языков настроенного Google `RecognitionService` и отмечает, присутствует ли `ru-RU`.
@@ -103,7 +103,7 @@
 - SpeechEngine использует AudioRecord 16 kHz mono PCM16, источник VOICE_RECOGNITION, выбирает RC In/MIBT.VoiceControl и подтверждает фактический route до передачи аудио в Vosk.
 - Кнопка F5 переведена на push-to-talk: ACTION_DOWN запускает запись, ACTION_UP завершает фразу. Следующий запрос в режиме диалога начинается после нового нажатия.
 - ИИ получает только распознанный текст; сырые аудиоданные не сохраняются и не отправляются.
-- Тестовая сборка сохраняет package id `app.orchard.tv.aerialvoice.mictest`, versionCode 3 / versionName 0.3.0, чтобы обновиться поверх 0.2.0.
+- Тестовая сборка сохраняет package id `app.orchard.tv.aerialvoice.mictest06`, versionCode 3 / versionName 0.3.0, чтобы обновиться поверх 0.2.0.
 - Следующий шаг: дождаться GitHub Actions build, скачать `aerial-voice-vosk-test-bundle.zip`, обновить установленное приложение, дождаться первичной загрузки модели, удерживать F5, произнести по-русски фразу и отпустить кнопку. Проверить распознанный текст.
 - При проблеме прислать статус модели и вывод `diagnose-mic-test.ps1`.
 
@@ -130,7 +130,7 @@
 - User cannot type the Authorization Key with the Android TV remote and asked to have it preconfigured.
 - Do NOT bake the credential into the APK or commit it. A static APK secret is extractable.
 - Added `MainActivity.importBootstrapKey()`: on startup reads `getExternalFilesDir(null)/aerial_voice_bootstrap_key.txt`, imports via `SecretStore.save()` (AES-GCM / Android Keystore), then overwrites best-effort and deletes the temporary file. Import result is shown on the app status line.
-- Updated `tools/install-mic-test.ps1` with optional `-BootstrapKeyFile`: pushes a local one-time key file to `/sdcard/Android/data/app.orchard.tv.aerialvoice.mictest/files/aerial_voice_bootstrap_key.txt`, launches app, polls until file disappears. The normal APK/release ZIP contains no key.
+- Updated `tools/install-mic-test.ps1` with optional `-BootstrapKeyFile`: pushes a local one-time key file to `/sdcard/Android/data/app.orchard.tv.aerialvoice.mictest06/files/aerial_voice_bootstrap_key.txt`, launches app, polls until file disappears. The normal APK/release ZIP contains no key.
 - For user convenience, prepare a one-time local PowerShell installer script containing the supplied Authorization Key, which creates a temporary local key file, calls the installer with `-BootstrapKeyFile`, removes the local temp file, and self-deletes after successful import. Do not commit that wrapper or key to GitHub.
 
 
@@ -140,14 +140,14 @@
 - 0.5.2 adds a home-screen "Тест ИИ" button that calls AiClient.ask using the saved SecretStore key and the same chat endpoint path as voice requests, with visible progress and error details.
 - AiClient logs request stages and HTTP status only; never log Authorization Key or access token.
 - SpeechEngine now exposes TTS default engine, installed engine list, ru-RU setLanguage result, initialization state; speak() surfaces not-ready reason rather than silently returning; added TTS playback error logs and voice settings test button.
-- Diagnostics dialog includes TTS detail. VersionCode 8, versionName 0.5.2. Existing app data and stored Authorization Key should be preserved by in-place update using same GitHub Actions debug keystore.
+- Diagnostics dialog includes TTS detail. VersionCode 8, versionName 0.5.2. At the time of this historical note, an in-place update was expected; later signing audit found the previous workflow's debug-keystore cache was empty. Do not rely on signature continuity from 0.5.2; the 0.6.0 package is installed side-by-side instead.
 - Next: build and install 0.5.2; click "Тест ИИ" and "Проверить русскую озвучку". If AI test succeeds but voice dialogue doesn't, inspect onFinal/capture path; if AI test fails, exact error will show in answer panel. If AI succeeds but TTS test fails, use diagnostics engine list to select/install a Russian TTS engine.
 - XiaoAI remains disabled at user level; no system package changes in this update.
 
 ## 0.6.0 — full assistant patch
 
 - Target device remains Xiaomi MiTV-MFTR0 / MT9653 / Android 14 SDK34; remote mic is RC In / MIBT.VoiceControl (input id 18); Vosk Russian small model and GigaChat work; RHVoice has been installed and Russian TTS works.
-- App package used for current update: `app.orchard.tv.aerialvoice.mictest`. Main package variant is `app.orchard.tv.aerialvoice`. Version 0.6.0, versionCode 9. Do not uninstall either package to solve signing errors.
+- App package used for current update: `app.orchard.tv.aerialvoice.mictest06`. Main package variant is `app.orchard.tv.aerialvoice`. Version 0.6.0, versionCode 9. Do not uninstall either package to solve signing errors.
 - Conversation history cap increased to 30; stored GigaChat key remains encrypted in SecretStore/Android Keystore and is not embedded in APK/source.
 - MemoryStore stores only explicit user-saved facts, encrypted using a separate Android Keystore AES-GCM alias. Voice commands: «запомни …», «что ты помнишь», «забудь …», «забудь всё». UI has a memory manager.
 - TvContextProvider adds the most recent non-system foreground app from UsageStats and MediaSessionBridge's active title/artist/playback state. UsageStats is granted by the combined installer with appops. Notification Listener access is attempted by ADB; if unavailable, use the «Контекст ТВ» dialog to open Android notification-listener settings.
@@ -156,8 +156,15 @@
 - BootReceiver is optional and off by default. User enables «Автозапуск» in the UI; the installer grants SYSTEM_ALERT_WINDOW with appops to allow the BOOT_COMPLETED activity launch.
 - F5 bridge v2 is applied to clean upstream Aerial v1.95 in CI. It forwards only KEY_F5 from remote vendor 0x2717/product 0x32B8: DOWN starts capture, UP stops/submits, >=650 ms marks continuous mode. It does not alter HomeGuardService.updateKeyFilter() or mouse/gamepad protection. If a mouse/gamepad is attached and Aerial disables filtering, F5 will not be intercepted; do not force-enable filtering.
 - Combined workflow builds:
-  - `aerial-voice-main-debug.apk` (package app.orchard.tv.aerialvoice)
-  - `aerial-voice-mictest-debug.apk` (package app.orchard.tv.aerialvoice.mictest; current user's app)
+  - `aerial-voice-full-debug.apk` (package app.orchard.tv.aerialvoice)
+  - `aerial-voice-mictest06-debug.apk` (package app.orchard.tv.aerialvoice.mictest06; current user's app)
   - `aerial-korobovo-voice-bridge.apk` (package app.orchard.tv.korobovo)
   - `aerial-voice-0.6.0-full-assistant.zip` with installer and docs.
 - The combined installer uses `adb install -r` only. On `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, it does not uninstall or clear data. Voice APK may update successfully while the Korobovo bridge update is skipped due to a different signing key; if that happens, keep the old launcher and diagnose the signature before any further action.
+
+
+## Подпись 0.6.0 и безопасная миграция
+
+- Старый APK 0.5.x был собран в GitHub Actions до появления постоянного debug.keystore cache; его подпись нельзя считать совпадающей с новой. Поэтому 0.6.0 micTest использует новый package suffix `.mictest06`, устанавливается рядом со старым `.mictest` и не удаляет его.
+- `install-full-assistant.ps1` принимает `-BootstrapKeyFile`, переносит одноразовый файл `aerial_voice_bootstrap_key.txt` в app-specific external storage нового пакета; `MainActivity.importBootstrapKey()` сохраняет его через SecretStore/Android Keystore и стирает файл.
+- Workflow теперь создаёт `~/.android/debug.keystore` детерминированным шагом после cache restore, чтобы последующие обновления новых package IDs использовали постоянную подпись.

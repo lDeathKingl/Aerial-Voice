@@ -7,7 +7,7 @@
 - ACTION_DOWN запускает Aerial Voice и начинает запись с RC In.
 - ACTION_UP останавливает запись и отправляет распознанную фразу.
 - Удержание от 650 мс включает режим диалога; после ответа Aerial Voice пробует автоматически слушать дальше.
-- Пакет `app.orchard.tv.aerialvoice.mictest` проверяется первым, затем основной `app.orchard.tv.aerialvoice`.
+- Пакет `app.orchard.tv.aerialvoice.mictest06` проверяется первым, затем основной `app.orchard.tv.aerialvoice`.
 
 ## Безопасность
 - Патч не изменяет `HomeGuardService.updateKeyFilter()`.

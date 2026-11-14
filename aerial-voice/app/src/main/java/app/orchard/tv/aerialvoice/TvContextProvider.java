@@ -8,6 +8,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Process;
 import android.os.Build;
+import android.os.Build;
 
 import java.util.Locale;
 
