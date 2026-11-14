@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -11,12 +12,14 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.speech.SpeechRecognizer;
+import android.speech.RecognizerIntent;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -30,6 +33,8 @@ import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+
+import java.util.ArrayList;
 
 
 public final class MainActivity extends Activity implements SpeechEngine.Listener {
@@ -56,6 +61,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private TextView answerText;
     private TextView diagnosticsText;
     private Button listenButton;
+    private RemoteMicTester remoteMicTester;
+    private AlertDialog remoteMicDialog;
     private boolean continuousMode;
     private boolean f5LongTriggered;
     private final Runnable activityF5Long = () -> {
@@ -146,6 +153,12 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         addWeighted(actions, settings);
         addWeighted(actions, diag);
         content.addView(actions);
+
+        Button micTest = button("Проверить микрофон пульта · RC In", false);
+        micTest.setOnClickListener(v -> showRemoteMicTest());
+        LinearLayout.LayoutParams micTestLp = new LinearLayout.LayoutParams(-1, dp(50));
+        micTestLp.bottomMargin = dp(12);
+        content.addView(micTest, micTestLp);
 
         LinearLayout chat = panel(this, PANEL_ALT, 18);
         TextView transcriptLabel = text("ТЫ СКАЗАЛ", 12, CYAN, true);
@@ -399,6 +412,108 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         return edit;
     }
 
+    private void showRemoteMicTest() {
+        stopListening();
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(18), dp(8), dp(18), dp(4));
+        TextView intro = text("Проверим, может ли Aerial Voice напрямую получить звук с отдельного входа RC In. Тест не сохраняет аудио — только показывает уровень сигнала.", 15, TEXT, false);
+        intro.setPadding(0, 0, 0, dp(12));
+        form.addView(intro);
+        TextView devices = text("Доступные входы:\n" + RemoteMicTester.listInputDevices(this), 13, MUTED, false);
+        devices.setPadding(0, 0, 0, dp(12));
+        form.addView(devices);
+        TextView languages = text("Языки RecognitionService: запрашиваю…", 13, MUTED, false);
+        languages.setPadding(0, 0, 0, dp(12));
+        form.addView(languages);
+        TextView testStatus = text("Тест не запущен", 17, GREEN, true);
+        testStatus.setPadding(0, 0, 0, dp(8));
+        form.addView(testStatus);
+        TextView level = text("Уровень сигнала: —", 16, TEXT, false);
+        level.setPadding(0, 0, 0, dp(12));
+        form.addView(level);
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        Button voiceRecognition = button("Тест VOICE_RECOGNITION", true);
+        Button mic = button("Тест MIC", false);
+        Button stop = button("Остановить", false);
+        addWeighted(buttons, voiceRecognition);
+        addWeighted(buttons, mic);
+        addWeighted(buttons, stop);
+        form.addView(buttons);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Тест микрофона пульта")
+                .setView(form)
+                .setNegativeButton("Закрыть", null)
+                .create();
+        remoteMicDialog = dialog;
+        dialog.setOnDismissListener(d -> {
+            stopRemoteMicTest();
+            remoteMicDialog = null;
+        });
+        voiceRecognition.setOnClickListener(v -> startRemoteMicTest(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION, "VOICE_RECOGNITION", testStatus, level));
+        mic.setOnClickListener(v -> startRemoteMicTest(
+                MediaRecorder.AudioSource.MIC, "MIC", testStatus, level));
+        stop.setOnClickListener(v -> {
+            if (remoteMicTester != null) remoteMicTester.stop();
+            testStatus.setText("Останавливаю тест…");
+        });
+        dialog.show();
+        voiceRecognition.requestFocus();
+        queryRecognitionLanguages(languages);
+    }
+
+    private void startRemoteMicTest(int source, String sourceName, TextView status, TextView level) {
+        stopRemoteMicTest();
+        status.setText("Запускаю RC In через " + sourceName + "…");
+        level.setText("Зажми кнопку микрофона на пульте и говори обычным голосом.");
+        remoteMicTester = new RemoteMicTester(this, new RemoteMicTester.Listener() {
+            @Override public void onStatus(String message) { runOnUiThread(() -> status.setText(message)); }
+            @Override public void onLevel(String message) { runOnUiThread(() -> level.setText(message)); }
+            @Override public void onFinished(String message) { runOnUiThread(() -> status.setText(message)); }
+        });
+        remoteMicTester.start(source, sourceName);
+    }
+
+    private void stopRemoteMicTest() {
+        if (remoteMicTester != null) {
+            remoteMicTester.stop();
+            remoteMicTester = null;
+        }
+    }
+
+    private void queryRecognitionLanguages(TextView target) {
+        Intent request = new Intent(RecognizerIntent.ACTION_GET_LANGUAGE_DETAILS);
+        try {
+            sendOrderedBroadcast(request, null, new BroadcastReceiver() {
+                @Override public void onReceive(Context context, Intent intent) {
+                    Bundle extras = getResultExtras(false);
+                    ArrayList<String> supported = extras == null ? null :
+                            extras.getStringArrayList(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES);
+                    String preferred = extras == null ? null :
+                            extras.getString(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE);
+                    if (supported == null || supported.isEmpty()) {
+                        target.setText("RecognitionService не вернул список языков. Поддержка ru-RU пока не подтверждена.");
+                        return;
+                    }
+                    boolean russian = false;
+                    for (String language : supported) {
+                        if ("ru-RU".equalsIgnoreCase(language) || "ru".equalsIgnoreCase(language)) {
+                            russian = true;
+                            break;
+                        }
+                    }
+                    target.setText("Языки RecognitionService: " + String.join(", ", supported) +
+                            "\nРусский ru-RU: " + (russian ? "заявлен" : "не заявлен") +
+                            (preferred == null ? "" : "\nПредпочтительный: " + preferred));
+                }
+            }, null, Activity.RESULT_OK, null, null);
+        } catch (Exception e) {
+            target.setText("Не удалось запросить языки RecognitionService: " + e.getMessage());
+        }
+    }
+
     private void refreshDiagnostics() {
         if (diagnosticsText == null) return;
         boolean recognition = SpeechRecognizer.isRecognitionAvailable(this);
@@ -436,6 +551,10 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_F5 &&
+                remoteMicDialog != null && remoteMicDialog.isShowing()) {
+            return super.dispatchKeyEvent(event);
+        }
         if (event.getKeyCode() == KeyEvent.KEYCODE_F5) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 f5LongTriggered = false;
@@ -463,6 +582,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        stopRemoteMicTest();
         if (speech != null) speech.destroy();
         super.onDestroy();
     }

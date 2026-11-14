@@ -41,28 +41,28 @@ jobs:
 
       - name: Build debug APK
         working-directory: aerial-voice
-        run: gradle --no-daemon clean :app:assembleDebug
+        run: gradle --no-daemon clean :app:assembleMicTestDebug
 
       - name: Prepare release bundle
         run: |
           mkdir -p dist
-          cp aerial-voice/app/build/outputs/apk/debug/app-debug.apk dist/aerial-voice-debug.apk
-          cp tools/install-aerial-voice.ps1 dist/
-          cp tools/remove-aerial-voice.ps1 dist/
-          cp tools/diagnose-aerial-voice.ps1 dist/
+          cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mic-test-debug.apk
+          cp tools/install-mic-test.ps1 dist/
+          cp tools/remove-mic-test.ps1 dist/
+          cp tools/diagnose-mic-test.ps1 dist/
           cp README.md dist/
           cp HANDOFF_NEXT_CHAT.md dist/
           cp CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-install-bundle.zip aerial-voice-debug.apk install-aerial-voice.ps1 remove-aerial-voice.ps1 diagnose-aerial-voice.ps1 README.md HANDOFF_NEXT_CHAT.md
+          zip -r aerial-voice-mic-test-bundle.zip aerial-voice-mic-test-debug.apk install-mic-test.ps1 remove-mic-test.ps1 diagnose-mic-test.ps1 README.md HANDOFF_NEXT_CHAT.md
 
       - name: Upload APK and scripts
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-0.1.0
+          name: aerial-voice-mic-test-0.2.0
           path: |
-            dist/aerial-voice-debug.apk
-            dist/aerial-voice-install-bundle.zip
+            dist/aerial-voice-mic-test-debug.apk
+            dist/aerial-voice-mic-test-bundle.zip
             dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md
