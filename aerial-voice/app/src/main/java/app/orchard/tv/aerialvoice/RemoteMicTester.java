@@ -157,16 +157,20 @@ public final class RemoteMicTester {
     }
     private AudioDeviceInfo findRcInput(AudioDeviceInfo[] devices) {
         for (AudioDeviceInfo device : devices) {
-            String name = String.valueOf(device.getProductName()).trim();
-            if ("RC In".equalsIgnoreCase(name) || name.toLowerCase(Locale.ROOT).contains("rc in")) return device;
+            String name = String.valueOf(device.getProductName()).trim().toLowerCase(Locale.ROOT);
+            // Xiaomi's AudioPolicy calls this port "RC In", while AudioManager may expose
+            // the same remote-control microphone to apps as "MIBT.VoiceControl".
+            if (name.equals("rc in") || name.contains("rc in") ||
+                    name.equals("mibt.voicecontrol") || name.contains("voicecontrol")) return device;
         }
         return null;
     }
     private boolean isRcInput(AudioDeviceInfo actual, AudioDeviceInfo target) {
         if (actual == null) return false;
         if (actual.getId() == target.getId()) return true;
-        String name = String.valueOf(actual.getProductName()).toLowerCase(Locale.ROOT);
-        return name.equals("rc in") || name.contains("rc in");
+        String name = String.valueOf(actual.getProductName()).trim().toLowerCase(Locale.ROOT);
+        return name.equals("rc in") || name.contains("rc in") ||
+                name.equals("mibt.voicecontrol") || name.contains("voicecontrol");
     }
     private String describe(AudioDeviceInfo device) {
         if (device == null) return "не определён (null)";
