@@ -59,7 +59,7 @@ jobs:
       - name: Upload APK and scripts
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-vosk-test-0.3.0
+          name: aerial-voice-vosk-test-0.3.1
           path: |
             dist/aerial-voice-vosk-test-debug.apk
             dist/aerial-voice-vosk-test-bundle.zip

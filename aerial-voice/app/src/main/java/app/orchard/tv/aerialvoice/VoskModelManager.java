@@ -65,7 +65,7 @@ public final class VoskModelManager {
         deleteRecursively(partial);
         deleteRecursively(temporary);
 
-        notifyProgress(listener, "Скачиваю русскую модель Vosk (примерно 45 МБ)…");
+        notifyProgress(listener, "Подключаюсь к серверу русской модели Vosk…");
         download(MODEL_URL, partial, listener);
         if (archive.exists() && !archive.delete()) {
             throw new IOException("Не удалось заменить старый архив модели.");
@@ -105,16 +105,23 @@ public final class VoskModelManager {
             connection = (HttpURLConnection) new URL(address).openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(20000);
-            connection.setReadTimeout(45000);
+            connection.setReadTimeout(30000);
             connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.3.0");
+            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.3.1");
+            Log.i(TAG, "Connecting to model server: " + address);
             int response = connection.getResponseCode();
+            Log.i(TAG, "Model server HTTP " + response);
             if (response != HttpURLConnection.HTTP_OK) {
                 throw new IOException("Сервер модели вернул HTTP " + response + ".");
             }
 
             long total = connection.getContentLengthLong();
+            Log.i(TAG, "Model archive content length: " + total + " bytes");
+            notifyProgress(listener, total > 0
+                    ? "Соединение установлено. Архив: " + (total / (1024L * 1024L)) + " МБ. Начинаю загрузку…"
+                    : "Соединение установлено. Размер архива не указан. Начинаю загрузку…");
             long downloaded = 0L;
+            long lastReportedBytes = 0L;
             int lastPercent = -1;
             try (InputStream input = new BufferedInputStream(connection.getInputStream());
                  BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(destination))) {
@@ -125,19 +132,26 @@ public final class VoskModelManager {
                     downloaded += count;
                     if (total > 0) {
                         int percent = (int) Math.min(100, downloaded * 100L / total);
-                        if (percent != lastPercent && (percent % 5 == 0 || percent == 100)) {
+                        if (downloaded - lastReportedBytes >= 1024L * 1024L || percent == 100) {
                             lastPercent = percent;
-                            notifyProgress(listener, "Скачиваю русскую модель Vosk: " + percent + "%");
+                            lastReportedBytes = downloaded;
+                            notifyProgress(listener, "Скачиваю русскую модель Vosk: " + percent + "% ("
+                                    + (downloaded / (1024L * 1024L)) + " из "
+                                    + Math.max(1L, total / (1024L * 1024L)) + " МБ)");
                         }
-                    } else if (downloaded % (5L * 1024L * 1024L) < count) {
+                    } else if (downloaded - lastReportedBytes >= 1024L * 1024L) {
+                        lastReportedBytes = downloaded;
                         notifyProgress(listener, "Скачано " + (downloaded / (1024L * 1024L)) + " МБ модели Vosk…");
                     }
                 }
                 output.flush();
             }
+            Log.i(TAG, "Model archive downloaded: " + destination.length() + " bytes");
             if (destination.length() < 10L * 1024L * 1024L) {
                 throw new IOException("Загруженный архив слишком маленький или повреждён.");
             }
+        } catch (java.net.SocketTimeoutException e) {
+            throw new IOException("Истекло время ожидания ответа сервера модели. Проверь интернет на телевизоре и доступ к alphacephei.com.", e);
         } finally {
             if (connection != null) connection.disconnect();
         }
