@@ -1,6 +1,7 @@
 param(
     [string]$Tv = "192.168.2.89:5555",
-    [string]$Apk = ""
+    [string]$Apk = "",
+    [string]$BootstrapKeyFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,6 +87,27 @@ elseif ($installResult.ExitCode -ne 0) {
     throw "Installation failed for a reason other than a signing conflict. Check the ADB output above."
 }
 
+if (-not [string]::IsNullOrWhiteSpace($BootstrapKeyFile)) {
+    if (-not (Test-Path -LiteralPath $BootstrapKeyFile)) {
+        throw "Bootstrap key file not found: $BootstrapKeyFile"
+    }
+
+    $RemoteBootstrapDir = "/sdcard/Android/data/$Package/files"
+    $RemoteBootstrapFile = "$RemoteBootstrapDir/aerial_voice_bootstrap_key.txt"
+    Write-Host "Transferring one-time GigaChat setup to Android TV..." -ForegroundColor Cyan
+    $mkdirResult = Invoke-AdbCommand -Arguments @("shell", "mkdir", "-p", $RemoteBootstrapDir)
+    if ($mkdirResult.ExitCode -ne 0) {
+        $mkdirResult.Output | ForEach-Object { Write-Host $_ }
+        throw "Could not prepare the temporary app storage on Android TV."
+    }
+
+    $pushResult = Invoke-AdbCommand -Arguments @("push", $BootstrapKeyFile, $RemoteBootstrapFile)
+    $pushResult.Output | ForEach-Object { Write-Host $_ }
+    if ($pushResult.ExitCode -ne 0) {
+        throw "Could not transfer the one-time GigaChat setup file."
+    }
+}
+
 Write-Host "Granting microphone permission..." -ForegroundColor Cyan
 $permissionResult = Invoke-AdbCommand -Arguments @("shell", "pm", "grant", $Package, "android.permission.RECORD_AUDIO")
 $permissionResult.Output | ForEach-Object { Write-Host $_ }
@@ -104,5 +126,22 @@ Start-Sleep -Seconds 2
 Write-Host "Installed package version:" -ForegroundColor Green
 $versionResult = Invoke-AdbCommand -Arguments @("shell", "dumpsys", "package", $Package)
 $versionResult.Output | Where-Object { $_ -match "versionName|versionCode" } | ForEach-Object { Write-Host $_ }
+
+if (-not [string]::IsNullOrWhiteSpace($BootstrapKeyFile)) {
+    Write-Host "Waiting for Aerial Voice to encrypt and import the one-time key..." -ForegroundColor Cyan
+    $imported = $false
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        Start-Sleep -Seconds 1
+        $checkResult = Invoke-AdbCommand -Arguments @("shell", "test", "-e", $RemoteBootstrapFile)
+        if ($checkResult.ExitCode -ne 0) {
+            $imported = $true
+            break
+        }
+    }
+    if (-not $imported) {
+        throw "The temporary key file is still on the TV. Check the app screen for an import error; do not share the key file."
+    }
+    Write-Host "GigaChat key was imported and the temporary TV file was removed." -ForegroundColor Green
+}
 
 Write-Host "Done. Only the separate diagnostic package was installed. The main Aerial Voice app and other apps were not changed." -ForegroundColor Green

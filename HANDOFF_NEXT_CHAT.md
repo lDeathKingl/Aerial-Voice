@@ -124,3 +124,11 @@
 - В настройках ИИ убраны OpenAI endpoint/model поля, добавлены модель GigaChat, Authorization Key, кнопка проверки токена и ответа.
 - Текущая реализация не подтверждает, что у конкретного проекта включён бесплатный Freemium: HTTP 403 будет показан как возможное отсутствие доступа к модели/лимита. Документация Сбера от 31.08.2026 говорит, что с 01.09.2026 новые клиенты или те, кто не покупал пакеты, могут оплачивать модели через cloud.ru; отдельная тарифная страница одновременно описывает Freemium для действующих клиентов. Уточнить доступ по фактическому ответу API и кабинету.
 - Основной Aerial Korobovo не менялся. Следующий шаг после сборки: установить APK на TV, ввести Authorization Key непосредственно в приложении, нажать «Проверить GigaChat», зафиксировать точный текст ошибки/успеха.
+
+
+## 0.5.1 — one-time ADB key bootstrap
+- User cannot type the Authorization Key with the Android TV remote and asked to have it preconfigured.
+- Do NOT bake the credential into the APK or commit it. A static APK secret is extractable.
+- Added `MainActivity.importBootstrapKey()`: on startup reads `getExternalFilesDir(null)/aerial_voice_bootstrap_key.txt`, imports via `SecretStore.save()` (AES-GCM / Android Keystore), then overwrites best-effort and deletes the temporary file. Import result is shown on the app status line.
+- Updated `tools/install-mic-test.ps1` with optional `-BootstrapKeyFile`: pushes a local one-time key file to `/sdcard/Android/data/app.orchard.tv.aerialvoice.mictest/files/aerial_voice_bootstrap_key.txt`, launches app, polls until file disappears. The normal APK/release ZIP contains no key.
+- For user convenience, prepare a one-time local PowerShell installer script containing the supplied Authorization Key, which creates a temporary local key file, calls the installer with `-BootstrapKeyFile`, removes the local temp file, and self-deletes after successful import. Do not commit that wrapper or key to GitHub.

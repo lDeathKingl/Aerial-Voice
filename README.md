@@ -181,3 +181,10 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 - Модель по умолчанию: GigaChat-2 (Lite); название можно изменить в настройках.
 - Добавлен официальный корневой сертификат НУЦ Минцифры в Android Network Security Config; CI скачивает его с официального адреса перед сборкой.
 - Основной Aerial Korobovo не изменяется.
+
+
+## Aerial Voice 0.5.1 — one-time key import
+- Added a one-time ADB bootstrap path so the user does not need to type the GigaChat Authorization Key with the TV remote.
+- The installer can accept a local temporary key file using `-BootstrapKeyFile`, push it to the app-specific external files directory, and launch the app.
+- On startup the app imports the file into SecretStore (AES-GCM backed by Android Keystore), wipes and deletes the temporary file, and displays an import status.
+- The Authorization Key is not embedded in the APK, GitHub source, or standard release ZIP.

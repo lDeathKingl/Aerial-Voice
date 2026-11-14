@@ -72,11 +72,69 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         speech = new SpeechEngine(this, this);
+        String bootstrapStatus = importBootstrapKey();
         applyVoiceSettings();
         loadHistory();
         buildUi();
         refreshDiagnostics();
+        if (bootstrapStatus != null && !bootstrapStatus.isEmpty()) {
+            boolean imported = bootstrapStatus.startsWith("Authorization Key импортирован");
+            setStatus(bootstrapStatus, imported ? GREEN : Color.rgb(251, 146, 60));
+        }
         handleLaunchIntent(getIntent());
+    }
+
+    /**
+     * One-time ADB bootstrap: reads a temporary key from app-specific external storage,
+     * encrypts it with Android Keystore via SecretStore, then wipes and deletes the file.
+     */
+    private String importBootstrapKey() {
+        java.io.File bootstrapFile = null;
+        boolean saved = false;
+        try {
+            java.io.File externalDir = getExternalFilesDir(null);
+            if (externalDir == null) return "";
+            bootstrapFile = new java.io.File(externalDir, "aerial_voice_bootstrap_key.txt");
+            if (!bootstrapFile.isFile()) return "";
+
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream input = new java.io.FileInputStream(bootstrapFile)) {
+                byte[] buffer = new byte[1024];
+                int count;
+                int total = 0;
+                while ((count = input.read(buffer)) != -1) {
+                    total += count;
+                    if (total > 16384) throw new IllegalStateException("Файл первичной настройки слишком большой.");
+                    bytes.write(buffer, 0, count);
+                }
+            }
+
+            String key = new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8).trim();
+            if (key.isEmpty()) throw new IllegalStateException("Файл первичной настройки пуст.");
+            SecretStore.save(this, key);
+            saved = true;
+            return "Authorization Key импортирован и зашифрован на телевизоре";
+        } catch (Exception e) {
+            String message = e.getMessage();
+            return "Не удалось импортировать Authorization Key: "
+                    + (message == null || message.trim().isEmpty() ? e.getClass().getSimpleName() : message);
+        } finally {
+            if (saved && bootstrapFile != null && bootstrapFile.exists()) {
+                try {
+                    long length = bootstrapFile.length();
+                    if (length > 0 && length <= 16384) {
+                        try (java.io.FileOutputStream output = new java.io.FileOutputStream(bootstrapFile, false)) {
+                            output.write(new byte[(int) length]);
+                            output.flush();
+                        }
+                    }
+                } catch (Exception ignored) { }
+                // Flash storage cannot guarantee forensic erasure; remove the temporary file after import.
+                // The persistent copy is now encrypted with an Android Keystore key.
+                //noinspection ResultOfMethodCallIgnored
+                bootstrapFile.delete();
+            }
+        }
     }
 
     @Override
@@ -108,7 +166,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("AERIAL VOICE · 0.5.0", 13, MUTED, true);
+        TextView version = text("AERIAL VOICE · 0.5.1", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));

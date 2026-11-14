@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 — one-time GigaChat key import
+- Added ADB one-time key bootstrap; no TV keyboard is needed.
+- App imports the temporary file into Android Keystore-backed SecretStore and deletes the temporary file.
+- The key is not included in the APK, repository, or standard build artifact.
+
+
 ## 0.5.0 — GigaChat API
 - Добавлен отдельный клиент GigaChat REST API с OAuth-авторизацией для физлиц.
 - Authorization Key хранится только на Android TV в Android Keystore-backed AES-GCM SecretStore.
