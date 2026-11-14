@@ -149,3 +149,8 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 - `tools/remove-aerial-voice.ps1` — удаление только Aerial Voice.
 - `.github/workflows/build-aerial-voice.yml` — автоматическая сборка APK.
 - `HANDOFF_NEXT_CHAT.md` — переносимый контекст для следующего чата.
+
+## Решение конфликта подписи при установке
+
+
+Если при установке появляется `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, скрипт распознает конфликт подписи и спросит разрешение удалить **только** старое тестовое приложение `app.orchard.tv.aerialvoice.mictest`. Его локальные данные будут удалены; основное приложение Aerial Voice не затрагивается.
