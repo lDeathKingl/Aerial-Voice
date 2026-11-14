@@ -106,8 +106,13 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         speech = new SpeechEngine(this, this, selectedEngine);
         speech.setTtsVoice(getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_voice", ""));
         String bootstrapStatus = importBootstrapKey();
+        String historyStatus = importBootstrapHistory();
         applyVoiceSettings();
         loadHistory();
+        if (historyStatus != null && !historyStatus.isEmpty()) {
+            bootstrapStatus = bootstrapStatus == null || bootstrapStatus.isEmpty()
+                    ? historyStatus : bootstrapStatus + " · " + historyStatus;
+        }
         buildUi();
         refreshDiagnostics();
         if (bootstrapStatus != null && !bootstrapStatus.isEmpty()) {
@@ -121,6 +126,60 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
      * One-time ADB bootstrap: reads a temporary key from app-specific external storage,
      * encrypts it with Android Keystore via SecretStore, then wipes and deletes the file.
      */
+    /** One-time migration of the old app's plain conversation history; no API key is read here. */
+    private String importBootstrapHistory() {
+        java.io.File file = null;
+        boolean imported = false;
+        try {
+            java.io.File externalDir = getExternalFilesDir(null);
+            if (externalDir == null) return "";
+            file = new java.io.File(externalDir, "aerial_voice_bootstrap_history.json");
+            if (!file.isFile()) return "";
+            if (file.length() > 256 * 1024) throw new IllegalStateException("Файл истории превышает 256 КБ.");
+            String json;
+            try (java.io.InputStream input = new java.io.FileInputStream(file);
+                 java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) != -1) bytes.write(buffer, 0, count);
+                json = new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8).trim();
+            }
+            JSONArray source = new JSONArray(json);
+            JSONArray trimmed = new JSONArray();
+            int start = Math.max(0, source.length() - MAX_HISTORY_MESSAGES);
+            for (int i = start; i < source.length(); i++) {
+                JSONObject item = source.optJSONObject(i);
+                if (item == null) continue;
+                String role = item.optString("role", "");
+                String content = item.optString("content", "").trim();
+                if (("user".equals(role) || "assistant".equals(role)) && !content.isEmpty()) {
+                    trimmed.put(new JSONObject().put("role", role).put("content", content)
+                            .put("timestamp", item.optLong("timestamp", System.currentTimeMillis())));
+                }
+            }
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString(HISTORY_KEY, trimmed.toString()).apply();
+            imported = true;
+            return "История старого помощника перенесена (" + trimmed.length() + " сообщений)";
+        } catch (Exception e) {
+            String message = e.getMessage();
+            return "Не удалось перенести историю: "
+                    + (message == null || message.trim().isEmpty() ? e.getClass().getSimpleName() : message);
+        } finally {
+            if (imported && file != null && file.exists()) {
+                try {
+                    long length = file.length();
+                    if (length > 0 && length <= 256 * 1024) {
+                        try (java.io.FileOutputStream output = new java.io.FileOutputStream(file, false)) {
+                            output.write(new byte[(int) length]);
+                        }
+                    }
+                    file.delete();
+                } catch (Exception ignored) { }
+            }
+        }
+    }
+
     private String importBootstrapKey() {
         java.io.File bootstrapFile = null;
         boolean saved = false;
