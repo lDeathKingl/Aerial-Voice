@@ -20,7 +20,7 @@ if ([string]::IsNullOrWhiteSpace($Apk)) {
 }
 
 if (-not $Apk -or -not (Test-Path $Apk)) {
-    throw "APK not found: aerial-voice-mic-test-debug.apk. Pass its path using -Apk."
+    throw "APK not found: aerial-voice-vosk-test-debug.apk. Pass its path using -Apk."
 }
 
 Write-Host "Connecting to Android TV at $Tv ..." -ForegroundColor Cyan

@@ -6,7 +6,7 @@
 
 - Отдельный Android TV APK: `app.orchard.tv.aerialvoice`.
 - Русский интерфейс, крупные элементы управления и навигация пультом.
-- Vosk offline recognizer с запросом языка `ru-RU`.
+- Offline Russian speech recognition through the local Vosk model and Xiaomi RC In audio input.
 - Русская озвучка через Android `TextToSpeech`.
 - Локальные голосовые команды:
   - запуск Zona, TorrServe, Lampa, IPTV Pro, Кинопоиска, Happ, LeanKeyboard, ADB AppControl TV, SmartTV Client for Twitch, TV Bro, VK TV, RuStore, Aerial и VLC;
