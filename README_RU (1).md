@@ -48,13 +48,13 @@
 
 ## Сборка Aerial Voice APK через GitHub Actions
 
-Исходники уже разложены по каталогам Android Gradle-проекта в этом репозитории. Workflow находится в `.github/workflows/build-aerial-voice.yml`.
+В среде создания проекта нет Android SDK и Gradle, поэтому APK здесь локально не собран. Исходники и workflow подготовлены для автоматической сборки.
 
-1. Открой репозиторий `lDeathKingl/Aerial-Voice` на GitHub.
-2. Перейди во вкладку **Actions**.
-3. Выбери **Build Aerial Voice APK** → **Run workflow**.
-4. Если ветка ещё не объединена с `main`, выбери `fix/restore-android-project` в поле Branch.
-5. После успешной сборки скачай artifact **aerial-voice-0.1.0**. Внутри будет `aerial-voice-install-bundle.zip`.
+1. Создай новый GitHub-репозиторий, например `aerial-voice`.
+2. Загрузи в корень репозитория всё содержимое папки `Aerial-Voice-Bundle` — особенно `.github/workflows/build-aerial-voice.yml`.
+3. Открой вкладку **Actions**.
+4. Выбери **Build Aerial Voice APK** → **Run workflow**.
+5. Скачай artifact **aerial-voice-0.1.0**. Внутри будет `aerial-voice-install-bundle.zip`.
 
 Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для последующих обновлений workflow кеширует debug signing key в пределах этого GitHub-репозитория. Не очищай GitHub Actions cache вручную: если ключ потеряется, Android может отказаться обновлять установленное приложение поверх старого. В таком случае не удаляй приложение — сначала сравним подписи APK.
 

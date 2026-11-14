@@ -38,18 +38,16 @@
 - `aerial-home-bridge-source.zip` — старое Android HOME bridge приложение `com.ts.launcher`, не голосовой помощник.
 - `aerial-korobovo-qr-fix-v6.zip`, `aerial-korobovo-wttr-patch-v4.zip` — старые патчи QR/погоды.
 
-## Структура проекта в репозитории
-
-Репозиторий `lDeathKingl/Aerial-Voice` организован следующим образом:
-- `aerial-voice/` — корень Android Gradle-проекта;
-- `aerial-voice/app/src/main/java/app/orchard/tv/aerialvoice/` — Java-классы приложения;
-- `aerial-voice/app/src/main/res/` — drawable и values ресурсы;
+## Новый проект
+Папка `Aerial-Voice-Bundle/` содержит:
+- `aerial-voice/` — отдельный Java Android TV проект;
 - `patch/patch_aerial_voice.py` — идемпотентный патчер HomeGuardService v1.95;
-- `patch/README_RU.md` — как применять патч и его ограничения;
-- `tools/` — PowerShell-скрипты установки, диагностики и удаления;
-- `.github/workflows/build-aerial-voice.yml` — автоматическая сборка APK;
-- `README.md` — инструкция пользователя;
-- `HANDOFF_NEXT_CHAT.md` — переносимый контекст проекта.
+- `patch/README_RU.md` — как применять и ограничения;
+- `tools/install-aerial-voice.ps1`;
+- `tools/diagnose-aerial-voice.ps1`;
+- `tools/remove-aerial-voice.ps1`;
+- `.github/workflows/build-aerial-voice.yml`;
+- `README_RU.md`.
 
 В Aerial Voice уже реализовано:
 - интерфейс на русском;

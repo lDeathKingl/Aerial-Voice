@@ -35,6 +35,8 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity implements SpeechEngine.Listener {
     private static final int REQUEST_AUDIO = 4101;
     private static final String PREFS = "aerial_voice_settings";
+    // Android stores this secure setting by name; the SDK does not expose a public constant.
+    private static final String VOICE_RECOGNITION_SERVICE_SETTING = "voice_recognition_service";
     private static final String EXTRA_START_LISTENING = "app.orchard.tv.aerialvoice.START_LISTENING";
     private static final String EXTRA_CONTINUOUS = "app.orchard.tv.aerialvoice.CONTINUOUS_MODE";
     private static final int BG = Color.rgb(7, 17, 31);
@@ -400,7 +402,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private void refreshDiagnostics() {
         if (diagnosticsText == null) return;
         boolean recognition = SpeechRecognizer.isRecognitionAvailable(this);
-        String recognitionService = Settings.Secure.getString(getContentResolver(), Settings.Secure.VOICE_RECOGNITION_SERVICE);
+        String recognitionService = Settings.Secure.getString(getContentResolver(), VOICE_RECOGNITION_SERVICE_SETTING);
         diagnosticsText.setText("Распознавание: " + (recognition ? "доступно" : "не найдено") +
                 "   ·   Кнопка пульта: нужен минимальный bridge-патч Aerial" +
                 "   ·   ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен") +
@@ -412,7 +414,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         out.append("AERIAL VOICE DIAGNOSTICS\n\n");
         out.append("Android API: ").append(Build.VERSION.SDK_INT).append('\n');
         out.append("SpeechRecognizer: ").append(SpeechRecognizer.isRecognitionAvailable(this) ? "available" : "not available").append('\n');
-        out.append("Recognition service: ").append(Settings.Secure.getString(getContentResolver(), Settings.Secure.VOICE_RECOGNITION_SERVICE)).append("\n\n");
+        out.append("Recognition service: ").append(Settings.Secure.getString(getContentResolver(), VOICE_RECOGNITION_SERVICE_SETTING)).append("\n\n");
         out.append("F5 bridge: requires the small HomeGuard patch in Aerial Korobovo.\n\n");
         out.append("Audio input devices:\n");
         AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
