@@ -14,7 +14,7 @@ if ([string]::IsNullOrWhiteSpace($Apk)) {
     $candidates = @(
         (Join-Path $PSScriptRoot "..\aerial-voice\app\build\outputs\apk\micTest\debug\app-micTest-debug.apk"),
         (Join-Path $PSScriptRoot "aerial-voice-vosk-test-debug.apk"),
-        (Join-Path (Get-Location) "aerial-voice-mic-test-debug.apk")
+        (Join-Path (Get-Location) "aerial-voice-vosk-test-debug.apk")
     )
     $Apk = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
@@ -29,7 +29,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Could not connect to Android TV through ADB."
 }
 
-Write-Host "Installing Aerial Voice RC In Test..." -ForegroundColor Cyan
+Write-Host "Installing Aerial Voice Vosk Test..." -ForegroundColor Cyan
 adb install -r $Apk
 if ($LASTEXITCODE -ne 0) {
     throw "Installation failed. If a test build with a different signature is installed, uninstall only app.orchard.tv.aerialvoice.mictest and retry. Do not uninstall the main Aerial Voice app."

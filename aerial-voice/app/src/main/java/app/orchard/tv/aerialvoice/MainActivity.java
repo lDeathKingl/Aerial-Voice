@@ -58,10 +58,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private RemoteMicTester remoteMicTester;
     private AlertDialog remoteMicDialog;
     private boolean continuousMode;
-    private boolean f5LongTriggered;
     private boolean remotePttActive;
     private final Runnable activityF5Long = () -> {
-        f5LongTriggered = true;
         continuousMode = true;
         setStatus("Режим диалога включён. Отпусти кнопку после фразы.", GREEN);
     };
@@ -341,6 +339,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         setStatus(message, Color.rgb(251, 146, 60));
         setAnswer("Проверь, что модель Vosk загружена и микрофон пульта подключён. Для отправки фразы отпусти кнопку микрофона.");
         if (continuousMode) scheduleContinuousIfNeeded();
+        refreshDiagnostics();
     }
 
     private void scheduleContinuousIfNeeded() {
@@ -535,7 +534,6 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_F5) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                f5LongTriggered = false;
                 remotePttActive = true;
                 handler.removeCallbacks(activityF5Long);
                 if (!continuousMode) handler.postDelayed(activityF5Long, 650L);
@@ -546,7 +544,6 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 handler.removeCallbacks(activityF5Long);
                 if (remotePttActive && speech != null) speech.stopListening();
                 remotePttActive = false;
-                f5LongTriggered = false;
                 return true;
             }
             return true;
