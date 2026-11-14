@@ -80,20 +80,23 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
             @Override public void onReady(File modelDirectory) {
                 if (destroyed) return;
-                try {
-                    Model loaded = new Model(modelDirectory.getAbsolutePath());
-                    if (destroyed) {
-                        loaded.close();
-                        return;
+                Thread loader = new Thread(() -> {
+                    try {
+                        Model loaded = new Model(modelDirectory.getAbsolutePath());
+                        if (destroyed) {
+                            loaded.close();
+                            return;
+                        }
+                        model = loaded;
+                        modelReady = true;
+                        modelLoading = false;
+                        postStatus("Русское офлайн-распознавание Vosk готово.");
+                    } catch (Exception e) {
+                        modelLoading = false;
+                        postError("Не удалось загрузить модель Vosk: " + safeMessage(e));
                     }
-                    model = loaded;
-                    modelReady = true;
-                    modelLoading = false;
-                    postStatus("Русское офлайн-распознавание Vosk готово.");
-                } catch (Exception e) {
-                    modelLoading = false;
-                    postError("Не удалось загрузить модель Vosk: " + safeMessage(e));
-                }
+                }, "AerialVoice-Vosk-Load");
+                loader.start();
             }
 
             @Override public void onError(String message) {

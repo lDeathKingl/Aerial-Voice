@@ -126,7 +126,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
         LinearLayout hero = panel(this, PANEL, 22);
         TextView heroTitle = text("Слушаю тебя.", 30, TEXT, true);
-        TextView heroSub = text("Нажми кнопку ниже или кнопку микрофона на пульте.\nКороткое нажатие — один запрос. Удержание — режим диалога.", 17, MUTED, false);
+        TextView heroSub = text("Нажми кнопку ниже, затем удерживай кнопку микрофона пульта и говори.\nОтпусти кнопку — отправить фразу. Долгое удержание включает режим диалога.", 17, MUTED, false);
         heroSub.setPadding(0, dp(8), 0, dp(14));
         hero.addView(heroTitle);
         hero.addView(heroSub);
@@ -269,7 +269,10 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         }
     }
 
-    @Override public void onStatus(String status) { setStatus(status, CYAN); }
+    @Override public void onStatus(String status) {
+        setStatus(status, CYAN);
+        refreshDiagnostics();
+    }
     @Override public void onPartial(String text) { transcriptText.setText(text); }
     @Override public void onTtsReady(boolean ready, String detail) {
         setStatus(detail, ready ? GREEN : Color.rgb(251, 146, 60));

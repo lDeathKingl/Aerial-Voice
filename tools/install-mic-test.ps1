@@ -13,7 +13,7 @@ if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
 if ([string]::IsNullOrWhiteSpace($Apk)) {
     $candidates = @(
         (Join-Path $PSScriptRoot "..\aerial-voice\app\build\outputs\apk\micTest\debug\app-micTest-debug.apk"),
-        (Join-Path $PSScriptRoot "aerial-voice-mic-test-debug.apk"),
+        (Join-Path $PSScriptRoot "aerial-voice-vosk-test-debug.apk"),
         (Join-Path (Get-Location) "aerial-voice-mic-test-debug.apk")
     )
     $Apk = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
