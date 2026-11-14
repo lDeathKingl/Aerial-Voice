@@ -54,12 +54,12 @@ jobs:
           cp HANDOFF_NEXT_CHAT.md dist/
           cp CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-vosk-test-bundle.zip aerial-voice-vosk-test-debug.apk install-mic-test.ps1 remove-mic-test.ps1 diagnose-mic-test.ps1 README.md HANDOFF_NEXT_CHAT.md
+          zip -r aerial-voice-vosk-test-0.4.0.zip aerial-voice-vosk-test-debug.apk install-mic-test.ps1 remove-mic-test.ps1 diagnose-mic-test.ps1 README.md HANDOFF_NEXT_CHAT.md
 
       - name: Upload APK and scripts
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-vosk-test-0.3.1
+          name: aerial-voice-vosk-test-0.4.0
           path: |
             dist/aerial-voice-vosk-test-debug.apk
             dist/aerial-voice-vosk-test-bundle.zip
