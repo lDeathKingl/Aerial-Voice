@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -18,8 +17,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.speech.SpeechRecognizer;
-import android.speech.RecognizerIntent;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -34,14 +31,11 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
 
 
 public final class MainActivity extends Activity implements SpeechEngine.Listener {
     private static final int REQUEST_AUDIO = 4101;
     private static final String PREFS = "aerial_voice_settings";
-    // Android stores this secure setting by name; the SDK does not expose a public constant.
-    private static final String VOICE_RECOGNITION_SERVICE_SETTING = "voice_recognition_service";
     private static final String EXTRA_START_LISTENING = "app.orchard.tv.aerialvoice.START_LISTENING";
     private static final String EXTRA_CONTINUOUS = "app.orchard.tv.aerialvoice.CONTINUOUS_MODE";
     private static final int BG = Color.rgb(7, 17, 31);
@@ -65,10 +59,11 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private AlertDialog remoteMicDialog;
     private boolean continuousMode;
     private boolean f5LongTriggered;
+    private boolean remotePttActive;
     private final Runnable activityF5Long = () -> {
         f5LongTriggered = true;
         continuousMode = true;
-        startListening();
+        setStatus("Режим диалога включён. Отпусти кнопку после фразы.", GREEN);
     };
 
     @Override
@@ -136,7 +131,14 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         hero.addView(heroTitle);
         hero.addView(heroSub);
         listenButton = button("●  НАЧАТЬ РАЗГОВОР", true);
-        listenButton.setOnClickListener(v -> { continuousMode = false; startListening(); });
+        listenButton.setOnClickListener(v -> {
+            if (speech != null && speech.isListening()) {
+                speech.stopListening();
+            } else {
+                continuousMode = false;
+                startListening();
+            }
+        });
         hero.addView(listenButton, new LinearLayout.LayoutParams(-1, dp(62)));
         content.addView(hero, new LinearLayout.LayoutParams(-1, -2));
 
@@ -249,6 +251,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     private void stopListening() {
         continuousMode = false;
+        remotePttActive = false;
+        handler.removeCallbacks(activityF5Long);
         if (speech != null) speech.cancel();
         if (listenButton != null) listenButton.setText("●  НАЧАТЬ РАЗГОВОР");
         setStatus("Остановлено", MUTED);
@@ -273,12 +277,13 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     }
 
     @Override public void onSpeechDone() {
-        if (continuousMode) handler.postDelayed(this::startListening, 350L);
+        if (continuousMode) setStatus("Готов к следующему вопросу. Удерживай кнопку микрофона.", GREEN);
     }
 
     @Override
     public void onFinal(String recognized) {
         if (listenButton != null) listenButton.setText("●  НАЧАТЬ РАЗГОВОР");
+        remotePttActive = false;
         transcriptText.setText(recognized);
         addHistory("user", recognized);
 
@@ -329,14 +334,14 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     @Override
     public void onError(String message) {
         if (listenButton != null) listenButton.setText("●  НАЧАТЬ РАЗГОВОР");
+        remotePttActive = false;
         setStatus(message, Color.rgb(251, 146, 60));
-        setAnswer("Проверь подключение пульта, разрешение на микрофон и доступность сервиса распознавания речи.");
-        if (continuousMode && !message.contains("Не услышал речь")) continuousMode = false;
-        else scheduleContinuousIfNeeded();
+        setAnswer("Проверь, что модель Vosk загружена и микрофон пульта подключён. Для отправки фразы отпусти кнопку микрофона.");
+        if (continuousMode) scheduleContinuousIfNeeded();
     }
 
     private void scheduleContinuousIfNeeded() {
-        if (continuousMode) handler.postDelayed(this::startListening, 1700L);
+        if (continuousMode) setStatus("Готов к следующему вопросу. Удерживай кнопку микрофона.", GREEN);
     }
 
     private void addHistory(String role, String content) {
@@ -423,7 +428,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         TextView devices = text("Доступные входы:\n" + RemoteMicTester.listInputDevices(this), 13, MUTED, false);
         devices.setPadding(0, 0, 0, dp(12));
         form.addView(devices);
-        TextView languages = text("Языки RecognitionService: запрашиваю…", 13, MUTED, false);
+        TextView languages = text("Распознавание выполняет локальная русская модель Vosk. Google RecognitionService не используется.", 13, MUTED, false);
         languages.setPadding(0, 0, 0, dp(12));
         form.addView(languages);
         TextView testStatus = text("Тест не запущен", 17, GREEN, true);
@@ -461,7 +466,6 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         });
         dialog.show();
         voiceRecognition.requestFocus();
-        queryRecognitionLanguages(languages);
     }
 
     private void startRemoteMicTest(int source, String sourceName, TextView status, TextView level) {
@@ -483,53 +487,24 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         }
     }
 
-    private void queryRecognitionLanguages(TextView target) {
-        Intent request = new Intent(RecognizerIntent.ACTION_GET_LANGUAGE_DETAILS);
-        try {
-            sendOrderedBroadcast(request, null, new BroadcastReceiver() {
-                @Override public void onReceive(Context context, Intent intent) {
-                    Bundle extras = getResultExtras(false);
-                    ArrayList<String> supported = extras == null ? null :
-                            extras.getStringArrayList(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES);
-                    String preferred = extras == null ? null :
-                            extras.getString(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE);
-                    if (supported == null || supported.isEmpty()) {
-                        target.setText("RecognitionService не вернул список языков. Поддержка ru-RU пока не подтверждена.");
-                        return;
-                    }
-                    boolean russian = false;
-                    for (String language : supported) {
-                        if ("ru-RU".equalsIgnoreCase(language) || "ru".equalsIgnoreCase(language)) {
-                            russian = true;
-                            break;
-                        }
-                    }
-                    target.setText("Языки RecognitionService: " + String.join(", ", supported) +
-                            "\nРусский ru-RU: " + (russian ? "заявлен" : "не заявлен") +
-                            (preferred == null ? "" : "\nПредпочтительный: " + preferred));
-                }
-            }, null, Activity.RESULT_OK, null, null);
-        } catch (Exception e) {
-            target.setText("Не удалось запросить языки RecognitionService: " + e.getMessage());
-        }
-    }
-
     private void refreshDiagnostics() {
         if (diagnosticsText == null) return;
-        boolean recognition = SpeechRecognizer.isRecognitionAvailable(this);
-        String recognitionService = Settings.Secure.getString(getContentResolver(), VOICE_RECOGNITION_SERVICE_SETTING);
-        diagnosticsText.setText("Распознавание: " + (recognition ? "доступно" : "не найдено") +
+        String modelState = speech == null ? "не запущена"
+                : speech.isModelReady() ? "готова"
+                : speech.isModelLoading() ? "загружается"
+                : "ошибка";
+        diagnosticsText.setText("Русская модель Vosk: " + modelState +
                 "   ·   Кнопка пульта: нужен минимальный bridge-патч Aerial" +
-                "   ·   ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен") +
-                "\nСлужба распознавания: " + (recognitionService == null ? "не назначена" : recognitionService));
+                "   ·   ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен"));
     }
 
     private void showDiagnostics() {
         StringBuilder out = new StringBuilder();
         out.append("AERIAL VOICE DIAGNOSTICS\n\n");
         out.append("Android API: ").append(Build.VERSION.SDK_INT).append('\n');
-        out.append("SpeechRecognizer: ").append(SpeechRecognizer.isRecognitionAvailable(this) ? "available" : "not available").append('\n');
-        out.append("Recognition service: ").append(Settings.Secure.getString(getContentResolver(), VOICE_RECOGNITION_SERVICE_SETTING)).append("\n\n");
+        out.append("Vosk Russian model: ").append(speech != null && speech.isModelReady() ? "ready" : speech != null && speech.isModelLoading() ? "loading" : "not ready").append('\n');
+        out.append("Recognition: offline Vosk, 16 kHz mono PCM\n");
+        out.append("Audio source: VOICE_RECOGNITION -> RC In / MIBT.VoiceControl\n\n");
         out.append("F5 bridge: requires the small HomeGuard patch in Aerial Korobovo.\n\n");
         out.append("Audio input devices:\n");
         AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
@@ -558,13 +533,16 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         if (event.getKeyCode() == KeyEvent.KEYCODE_F5) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 f5LongTriggered = false;
+                remotePttActive = true;
                 handler.removeCallbacks(activityF5Long);
-                handler.postDelayed(activityF5Long, 650L);
+                if (!continuousMode) handler.postDelayed(activityF5Long, 650L);
+                startListening();
                 return true;
             }
             if (event.getAction() == KeyEvent.ACTION_UP) {
                 handler.removeCallbacks(activityF5Long);
-                if (!f5LongTriggered) { continuousMode = false; startListening(); }
+                if (remotePttActive && speech != null) speech.stopListening();
+                remotePttActive = false;
                 f5LongTriggered = false;
                 return true;
             }
