@@ -36,6 +36,7 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity implements SpeechEngine.Listener {
     private static final int REQUEST_AUDIO = 4101;
     private static final String PREFS = "aerial_voice_settings";
+    private static final String HISTORY_KEY = "conversation_history_json";
     private static final String EXTRA_START_LISTENING = "app.orchard.tv.aerialvoice.START_LISTENING";
     private static final String EXTRA_CONTINUOUS = "app.orchard.tv.aerialvoice.CONTINUOUS_MODE";
     private static final int BG = Color.rgb(7, 17, 31);
@@ -71,6 +72,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         speech = new SpeechEngine(this, this);
+        applyVoiceSettings();
+        loadHistory();
         buildUi();
         refreshDiagnostics();
         handleLaunchIntent(getIntent());
@@ -105,7 +108,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("ДИАГНОСТИКА МИКРОФОНА · 0.2.0", 13, MUTED, true);
+        TextView version = text("AERIAL VOICE · 0.4.0", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -154,6 +157,17 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         addWeighted(actions, diag);
         content.addView(actions);
 
+        LinearLayout secondaryActions = new LinearLayout(this);
+        secondaryActions.setOrientation(LinearLayout.HORIZONTAL);
+        secondaryActions.setPadding(0, 0, 0, dp(12));
+        Button voiceSettings = button("Настройки голоса", false);
+        voiceSettings.setOnClickListener(v -> showVoiceSettings());
+        Button clearChat = button("Очистить диалог", false);
+        clearChat.setOnClickListener(v -> confirmClearHistory());
+        addWeighted(secondaryActions, voiceSettings);
+        addWeighted(secondaryActions, clearChat);
+        content.addView(secondaryActions);
+
         Button micTest = button("Проверить микрофон пульта · RC In", false);
         micTest.setOnClickListener(v -> showRemoteMicTest());
         LinearLayout.LayoutParams micTestLp = new LinearLayout.LayoutParams(-1, dp(50));
@@ -178,7 +192,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         diagnosticsText = text("Проверяю компоненты…", 14, MUTED, false);
         root.addView(diagnosticsText);
 
-        TextView footer = text("ПУЛЬТ: короткое нажатие — один запрос · удержание — диалог · F5 внутри приложения — слушать", 12, MUTED, false);
+        TextView footer = text("ПУЛЬТ: удерживай микрофон во время фразы и отпусти для отправки · долгое удержание включает диалог", 12, MUTED, false);
         footer.setPadding(0, dp(12), 0, 0);
         root.addView(footer);
 
@@ -243,6 +257,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
             return;
         }
+        if (speech != null) speech.stopSpeaking();
         if (listenButton != null) listenButton.setText("●  СЛУШАЮ…");
         speech.startListening();
     }
@@ -278,7 +293,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     }
 
     @Override public void onSpeechDone() {
-        if (continuousMode) setStatus("Готов к следующему вопросу. Удерживай кнопку микрофона.", GREEN);
+        if (continuousMode) setStatus("Диалог активен. Удерживай кнопку микрофона для следующего вопроса.", GREEN);
     }
 
     @Override
@@ -287,6 +302,34 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         remotePttActive = false;
         transcriptText.setText(recognized);
         addHistory("user", recognized);
+
+        String normalized = recognized.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        if (normalized.contains("закончить диалог") || normalized.contains("заверши диалог")
+                || normalized.contains("останови диалог") || normalized.contains("выйти из диалога")) {
+            continuousMode = false;
+            String message = "Хорошо, диалог завершён.";
+            setAnswer(message);
+            addHistory("assistant", message);
+            speech.speak(message);
+            setStatus("Диалог завершён", MUTED);
+            return;
+        }
+        if (normalized.contains("очисти диалог") || normalized.contains("очисти историю")) {
+            clearHistory();
+            String message = "История диалога очищена.";
+            setAnswer(message);
+            speech.speak(message);
+            setStatus(message, GREEN);
+            return;
+        }
+        if (normalized.equals("повтори") || normalized.contains("повтори ответ")) {
+            String previous = answerText == null ? "" : answerText.getText().toString();
+            if (!previous.trim().isEmpty()) {
+                speech.speak(previous);
+                setStatus("Повторяю предыдущий ответ", GREEN);
+            }
+            return;
+        }
 
         CommandRouter.Result local = CommandRouter.execute(this, recognized);
         if (local.handled) {
@@ -313,15 +356,17 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         AiClient.ask(this, history, new AiClient.Callback() {
             @Override public void onSuccess(String answer) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     setAnswer(answer);
                     addHistory("assistant", answer);
-                    setStatus("Готов к следующему вопросу", GREEN);
+                    setStatus(continuousMode ? "Диалог активен" : "Готов к следующему вопросу", GREEN);
                     speech.speak(answer);
                     if (!speech.isTtsReady()) scheduleContinuousIfNeeded();
                 });
             }
             @Override public void onError(String message) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     setAnswer(message);
                     addHistory("assistant", message);
                     setStatus("Не удалось получить ответ ИИ", Color.rgb(251, 146, 60));
@@ -337,7 +382,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         if (listenButton != null) listenButton.setText("●  НАЧАТЬ РАЗГОВОР");
         remotePttActive = false;
         setStatus(message, Color.rgb(251, 146, 60));
-        setAnswer("Проверь, что модель Vosk загружена и микрофон пульта подключён. Для отправки фразы отпусти кнопку микрофона.");
+        setAnswer(message + " Если проблема повторяется, открой диагностику и проверь RC In.");
         if (continuousMode) scheduleContinuousIfNeeded();
         refreshDiagnostics();
     }
@@ -346,11 +391,93 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         if (continuousMode) setStatus("Готов к следующему вопросу. Удерживай кнопку микрофона.", GREEN);
     }
 
+    private void loadHistory() {
+        try {
+            String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(HISTORY_KEY, "");
+            if (saved == null || saved.isEmpty()) return;
+            JSONArray stored = new JSONArray(saved);
+            for (int i = Math.max(0, stored.length() - 12); i < stored.length(); i++) {
+                JSONObject item = stored.optJSONObject(i);
+                if (item == null) continue;
+                String role = item.optString("role", "");
+                String content = item.optString("content", "").trim();
+                if (("user".equals(role) || "assistant".equals(role)) && !content.isEmpty()) {
+                    history.put(new JSONObject().put("role", role).put("content", content));
+                }
+            }
+        } catch (Exception ignored) {
+            while (history.length() > 0) history.remove(0);
+        }
+    }
+
+    private void saveHistory() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(HISTORY_KEY, history.toString()).apply();
+    }
+
     private void addHistory(String role, String content) {
         try {
             history.put(new JSONObject().put("role", role).put("content", content));
             while (history.length() > 12) history.remove(0);
+            saveHistory();
         } catch (Exception ignored) { }
+    }
+
+    private void clearHistory() {
+        while (history.length() > 0) history.remove(0);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(HISTORY_KEY).apply();
+        if (transcriptText != null) transcriptText.setText("История очищена. Можем начать новый разговор.");
+    }
+
+    private void confirmClearHistory() {
+        new AlertDialog.Builder(this)
+                .setTitle("Очистить историю диалога?")
+                .setMessage("Будут удалены сохранённые сообщения, которые ИИ использует как контекст. API-ключ и настройки не затрагиваются.")
+                .setPositiveButton("Очистить", (d, w) -> {
+                    clearHistory();
+                    setAnswer("История диалога очищена.");
+                    setStatus("История очищена", GREEN);
+                })
+                .setNegativeButton("Отмена", null).show();
+    }
+
+    private void applyVoiceSettings() {
+        if (speech == null) return;
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        speech.setVoiceSettings(prefs.getFloat("tts_rate", 1.0f), prefs.getFloat("tts_pitch", 1.0f));
+    }
+
+    private void showVoiceSettings() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(18), dp(8), dp(18), dp(4));
+        EditText rate = field("Скорость речи: 0.65–1.4", String.valueOf(prefs.getFloat("tts_rate", 1.0f)),
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        EditText pitch = field("Высота голоса: 0.7–1.3", String.valueOf(prefs.getFloat("tts_pitch", 1.0f)),
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        form.addView(label("Скорость речи (1.0 — обычная)"));
+        form.addView(rate);
+        form.addView(label("Высота голоса (1.0 — обычная)"));
+        form.addView(pitch);
+        form.addView(label("Изменения применяются к русской озвучке телевизора."));
+        new AlertDialog.Builder(this).setTitle("Настройки голоса").setView(form)
+                .setPositiveButton("Сохранить", (d, w) -> {
+                    try {
+                        float newRate = Float.parseFloat(rate.getText().toString().replace(',', '.'));
+                        float newPitch = Float.parseFloat(pitch.getText().toString().replace(',', '.'));
+                        if (newRate < 0.65f || newRate > 1.4f || newPitch < 0.7f || newPitch > 1.3f) {
+                            throw new IllegalArgumentException("Значения вне допустимого диапазона.");
+                        }
+                        prefs.edit().putFloat("tts_rate", newRate).putFloat("tts_pitch", newPitch).apply();
+                        speech.setVoiceSettings(newRate, newPitch);
+                        setStatus("Настройки голоса сохранены", GREEN);
+                        speech.speak("Настройки голоса сохранены.");
+                    } catch (Exception e) {
+                        setStatus("Проверь скорость и высоту голоса", Color.rgb(251, 146, 60));
+                        setAnswer("Скорость должна быть от 0.65 до 1.4, высота — от 0.7 до 1.3.");
+                    }
+                })
+                .setNegativeButton("Отмена", null).show();
     }
 
     private void setStatus(String value, int color) {
@@ -366,36 +493,74 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(18), dp(8), dp(18), dp(4));
-        EditText endpoint = field("API endpoint", prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions"), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        EditText model = field("Модель", prefs.getString("model", "gpt-4o-mini"), InputType.TYPE_CLASS_TEXT);
-        EditText key = field("API-ключ (оставь пустым, чтобы не менять)", "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        form.addView(label("Совместимый с OpenAI Chat Completions API сервер"));
-        form.addView(endpoint);
-        form.addView(label("Название модели"));
-        form.addView(model);
-        form.addView(label("Секретный ключ"));
-        form.addView(key);
-        new AlertDialog.Builder(this)
-                .setTitle("Настройки Aerial AI")
-                .setView(form)
-                .setPositiveButton("Сохранить", (dialog, which) -> {
-                    prefs.edit().putString("endpoint", endpoint.getText().toString().trim())
-                            .putString("model", model.getText().toString().trim()).apply();
-                    String newKey = key.getText().toString().trim();
-                    if (!newKey.isEmpty()) {
-                        try { SecretStore.save(this, newKey); }
-                        catch (Exception e) { setAnswer("Не удалось безопасно сохранить API-ключ: " + e.getMessage()); }
-                    }
-                    setStatus(AiClient.isConfigured(this) ? "ИИ настроен" : "Сохранены настройки · API-ключ не задан", GREEN);
-                    refreshDiagnostics();
-                })
-                .setNeutralButton("Удалить API-ключ", (dialog, which) -> {
-                    try { SecretStore.save(this, ""); } catch (Exception ignored) { }
-                    setStatus("API-ключ удалён", MUTED);
-                    refreshDiagnostics();
-                })
-                .setNegativeButton("Отмена", null)
-                .show();
+        EditText endpoint = field("https://api.openai.com/v1/chat/completions",
+                prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions"),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        EditText model = field("Например: gpt-4o-mini", prefs.getString("model", "gpt-4o-mini"), InputType.TYPE_CLASS_TEXT);
+        EditText key = field("Вставь API-ключ (пусто — оставить прежний)", "",
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        TextView note = text("Подойдёт OpenAI-compatible Chat Completions API. Ключ хранится зашифрованным в Android Keystore. ChatGPT Plus сам по себе не включает API-кредиты.", 13, MUTED, false);
+        note.setPadding(0, dp(8), 0, dp(10));
+        TextView testStatus = text("Проверь соединение до сохранения настроек.", 14, MUTED, false);
+        testStatus.setPadding(0, dp(10), 0, dp(8));
+        Button test = button("Проверить соединение", true);
+        Button deleteKey = button("Удалить сохранённый API-ключ", false);
+        form.addView(label("API endpoint")); form.addView(endpoint);
+        form.addView(label("Название модели")); form.addView(model);
+        form.addView(label("API-ключ")); form.addView(key);
+        form.addView(note); form.addView(test); form.addView(testStatus); form.addView(deleteKey);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Настройки Aerial AI")
+                .setView(form).setPositiveButton("Сохранить", null).setNegativeButton("Отмена", null).create();
+
+        test.setOnClickListener(v -> {
+            String enteredKey = key.getText().toString().trim();
+            if (enteredKey.isEmpty()) {
+                try { enteredKey = SecretStore.read(this); }
+                catch (Exception e) { testStatus.setText("Не удалось прочитать ключ: " + e.getMessage()); return; }
+            }
+            test.setEnabled(false);
+            testStatus.setText("Проверяю соединение с ИИ-сервером…");
+            AiClient.testConnection(this, endpoint.getText().toString().trim(), model.getText().toString().trim(),
+                    enteredKey, new AiClient.Callback() {
+                @Override public void onSuccess(String answer) {
+                    runOnUiThread(() -> { test.setEnabled(true); testStatus.setText(answer); testStatus.setTextColor(GREEN); });
+                }
+                @Override public void onError(String message) {
+                    runOnUiThread(() -> { test.setEnabled(true); testStatus.setText("Ошибка: " + message); testStatus.setTextColor(Color.rgb(251, 146, 60)); });
+                }
+            });
+        });
+
+        deleteKey.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Удалить API-ключ?")
+                .setMessage("Ключ будет удалён из зашифрованного хранилища телевизора.")
+                .setPositiveButton("Удалить", (d, w) -> {
+                    try { SecretStore.save(this, ""); key.setText(""); testStatus.setText("Сохранённый API-ключ удалён."); refreshDiagnostics(); }
+                    catch (Exception e) { testStatus.setText("Не удалось удалить ключ: " + e.getMessage()); }
+                }).setNegativeButton("Отмена", null).show());
+
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String newEndpoint = endpoint.getText().toString().trim();
+            String newModel = model.getText().toString().trim();
+            if (newEndpoint.isEmpty() || newModel.isEmpty()) {
+                testStatus.setText("Заполни API endpoint и название модели.");
+                testStatus.setTextColor(Color.rgb(251, 146, 60));
+                return;
+            }
+            try {
+                prefs.edit().putString("endpoint", newEndpoint).putString("model", newModel).apply();
+                String newKey = key.getText().toString().trim();
+                if (!newKey.isEmpty()) SecretStore.save(this, newKey);
+                dialog.dismiss();
+                boolean configured = AiClient.isConfigured(this);
+                setStatus(configured ? "Настройки ИИ сохранены" : "Настройки сохранены · API-ключ не задан", configured ? GREEN : MUTED);
+                refreshDiagnostics();
+            } catch (Exception e) {
+                testStatus.setText("Не удалось сохранить настройки: " + e.getMessage());
+                testStatus.setTextColor(Color.rgb(251, 146, 60));
+            }
+        }));
+        dialog.show();
     }
 
     private TextView label(String value) {
@@ -495,9 +660,10 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 : speech.isModelReady() ? "готова"
                 : speech.isModelLoading() ? "загружается"
                 : "ошибка";
-        diagnosticsText.setText("Русская модель Vosk: " + modelState +
-                "   ·   Кнопка пульта: нужен минимальный bridge-патч Aerial" +
-                "   ·   ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен"));
+        String ttsState = speech != null && speech.isTtsReady() ? "готова" : "ожидание";
+        diagnosticsText.setText("Vosk: " + modelState + " · Русская озвучка: " + ttsState
+                + " · ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен")
+                + " · Контекст: " + history.length() + "/12");
     }
 
     private void showDiagnostics() {
@@ -561,6 +727,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
         stopRemoteMicTest();
+        saveHistory();
         if (speech != null) speech.destroy();
         super.onDestroy();
     }
