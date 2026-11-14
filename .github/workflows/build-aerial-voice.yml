@@ -47,11 +47,11 @@ jobs:
           cp tools/install-aerial-voice.ps1 dist/
           cp tools/remove-aerial-voice.ps1 dist/
           cp tools/diagnose-aerial-voice.ps1 dist/
-          cp README_RU.md dist/
+          cp README.md dist/
           cp HANDOFF_NEXT_CHAT.md dist/
           cp CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-install-bundle.zip aerial-voice-debug.apk install-aerial-voice.ps1 remove-aerial-voice.ps1 diagnose-aerial-voice.ps1 README_RU.md HANDOFF_NEXT_CHAT.md
+          zip -r aerial-voice-install-bundle.zip aerial-voice-debug.apk install-aerial-voice.ps1 remove-aerial-voice.ps1 diagnose-aerial-voice.ps1 README.md HANDOFF_NEXT_CHAT.md
 
       - name: Upload APK and scripts
         uses: actions/upload-artifact@v4
@@ -60,7 +60,7 @@ jobs:
           path: |
             dist/aerial-voice-debug.apk
             dist/aerial-voice-install-bundle.zip
-            dist/README_RU.md
+            dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md
           if-no-files-found: error
