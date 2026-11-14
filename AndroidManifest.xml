@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    >
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <package android:name="mobi.zona" />
+        <package android:name="ru.yourok.torrserve" />
+        <package android:name="top.rootu.lampa" />
+        <package android:name="ru.iptvremote.android.iptv.pro" />
+        <package android:name="ru.kinopoisk.tv" />
+        <package android:name="su.happ.proxyutility" />
+        <package android:name="org.liskovsoft.androidtv.rukeyboard" />
+        <package android:name="com.cybercat.adbappcontrol.tv" />
+        <package android:name="com.fgl27.twitch" />
+        <package android:name="com.phlox.tvwebbrowser" />
+        <package android:name="com.vk.tv" />
+        <package android:name="ru.vk.store.tv" />
+        <package android:name="ru.vk.store" />
+        <package android:name="app.orchard.tv.korobovo" />
+        <package android:name="org.videolan.vlc" />
+        <package android:name="com.google.android.katniss" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_aerial_voice"
+        android:roundIcon="@drawable/ic_aerial_voice"
+        android:banner="@drawable/tv_banner"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+
+
+
+    </application>
+</manifest>

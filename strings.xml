@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Aerial Voice</string>
+    <string name="accessibility_service_description">Перехват только кнопки микрофона Xiaomi для запуска Aerial Voice. Остальные клавиши передаются без изменений.</string>
+</resources>
