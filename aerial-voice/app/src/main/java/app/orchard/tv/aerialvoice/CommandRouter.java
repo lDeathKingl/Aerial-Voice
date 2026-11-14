@@ -10,6 +10,8 @@ import android.view.KeyEvent;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Local, deterministic TV commands. Anything else may be sent to the configured AI endpoint. */
 public final class CommandRouter {
@@ -66,6 +68,22 @@ public final class CommandRouter {
     public static Result execute(Context context, String spoken) {
         String q = normalize(spoken);
         if (q.isEmpty()) return new Result(false, "Не удалось разобрать команду.");
+
+        Matcher volumeMatch = Pattern.compile("(?:громкость|звук)\\s*(?:на\\s*)?(\\d{1,3})").matcher(q);
+        if (volumeMatch.find()) {
+            int percent;
+            try { percent = Integer.parseInt(volumeMatch.group(1)); }
+            catch (NumberFormatException e) { percent = -1; }
+            if (percent >= 0 && percent <= 100) {
+                AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                if (audio != null) {
+                    int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                    int target = Math.round(max * percent / 100.0f);
+                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI);
+                    return new Result(true, "Устанавливаю громкость на " + percent + " процентов.");
+                }
+            }
+        }
 
         if (containsAny(q, "громче", "увеличь громкость", "прибавь звук")) {
             AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);

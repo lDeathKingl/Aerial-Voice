@@ -51,6 +51,8 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
     private TextToSpeech tts;
     private volatile boolean ttsReady;
+    private volatile float speechRate = 1.0f;
+    private volatile float speechPitch = 1.0f;
 
     public SpeechEngine(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -110,6 +112,23 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     public boolean isModelLoading() { return modelLoading; }
     public boolean isListening() { return listening; }
     public boolean isTtsReady() { return ttsReady; }
+
+    public void setVoiceSettings(float rate, float pitch) {
+        speechRate = Math.max(0.65f, Math.min(1.4f, rate));
+        speechPitch = Math.max(0.7f, Math.min(1.3f, pitch));
+        main.post(() -> {
+            if (tts != null && ttsReady) {
+                tts.setSpeechRate(speechRate);
+                tts.setPitch(speechPitch);
+            }
+        });
+    }
+
+    public void stopSpeaking() {
+        if (tts != null) {
+            try { tts.stop(); } catch (Exception ignored) { }
+        }
+    }
 
     /** Starts a capture session. The caller should stop it when the remote mic key is released. */
     public synchronized void startListening() {
@@ -331,7 +350,13 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
     public void speak(String text) {
         if (tts == null || !ttsReady || text == null || text.trim().isEmpty()) return;
-        int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null,
+        String spoken = text.replaceAll("(?s)\\x60\\x60\\x60.*?\\x60\\x60\\x60", "код")
+                .replaceAll("https?://\\S+", "ссылка")
+                .replaceAll("[*_#~]", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (spoken.isEmpty()) return;
+        int result = tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null,
                 "aerial-voice-answer-" + System.currentTimeMillis());
         if (result == TextToSpeech.ERROR) {
             postStatus("Синтез речи не смог воспроизвести ответ.");
@@ -345,6 +370,10 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             int language = tts.setLanguage(new Locale("ru", "RU"));
             ttsReady = language != TextToSpeech.LANG_MISSING_DATA
                     && language != TextToSpeech.LANG_NOT_SUPPORTED;
+            if (ttsReady) {
+                tts.setSpeechRate(speechRate);
+                tts.setPitch(speechPitch);
+            }
             postTtsReady(ttsReady, ttsReady
                     ? "Русская озвучка готова"
                     : "В системе нет русского голоса TTS.");
