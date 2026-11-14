@@ -1,10 +1,10 @@
-name: Build Aerial Voice APK
+name: Build Aerial Voice full assistant
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - '**'
 
 permissions:
   contents: read
@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout project
+      - name: Checkout Aerial Voice
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -22,11 +22,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK 34 and 36
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK 34
-        run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
+      - name: Install Android SDK platforms and build tools
+        run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0' 'platforms;android-36' 'build-tools;36.0.0'
 
       - name: Download official Russian Trusted Root CA for GigaChat
         run: |
@@ -34,41 +34,67 @@ jobs:
           curl --fail --location --retry 3 --retry-delay 2 "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt" -o aerial-voice/app/src/main/res/raw/russian_trusted_root_ca_pem.crt
           test -s aerial-voice/app/src/main/res/raw/russian_trusted_root_ca_pem.crt
 
-      - name: Set up Gradle
+      - name: Set up Gradle for Aerial Voice
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Restore stable debug signing key for app updates
+      - name: Restore stable debug signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: aerial-voice-debug-keystore-v1
 
-      - name: Build debug APK
+      - name: Build main and micTest Aerial Voice APKs
         working-directory: aerial-voice
-        run: gradle --no-daemon clean :app:assembleMicTestDebug
+        run: gradle --no-daemon clean :app:assembleMainDebug :app:assembleMicTestDebug
 
-      - name: Prepare release bundle
+      - name: Get Aerial 1.95 and Korobovo weather patch
+        run: |
+          git clone --depth 1 --branch v1.95 https://github.com/pengchujin/aerial-tv.git korobovo-upstream
+          git clone --depth 1 https://github.com/lDeathKingl/Aerial-Korobovo.git korobovo-patches
+          cp korobovo-patches/patch/Weather.kt korobovo-upstream/app/src/main/java/app/orchard/tv/weather/Weather.kt
+
+      - name: Apply safe Xiaomi F5 bridge and isolate Korobovo package
+        run: |
+          python3 patch/patch_aerial_voice.py korobovo-upstream
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('korobovo-upstream/app/build.gradle.kts')
+          src = p.read_text(encoding='utf-8')
+          old = 'create("guard") {\n'
+          assert src.count(old) == 1, 'Unexpected Aerial 1.95 Gradle config'
+          # Preserve the existing Korobovo test package ID; never overwrite official Aerial.
+          src = src.replace(old, old + '            applicationIdSuffix = ".korobovo"\n', 1)
+          p.write_text(src, encoding='utf-8')
+          PY
+
+      - name: Build patched Aerial Korobovo guard APK
+        working-directory: korobovo-upstream
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:assembleGuardRelease
+
+      - name: Prepare combined release bundle
         run: |
           mkdir -p dist
-          cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-vosk-test-debug.apk
-          cp tools/install-mic-test.ps1 dist/
-          cp tools/remove-mic-test.ps1 dist/
-          cp tools/diagnose-mic-test.ps1 dist/
-          cp README.md dist/
-          cp HANDOFF_NEXT_CHAT.md dist/
-          cp CHANGELOG.md dist/
+          cp aerial-voice/app/build/outputs/apk/main/debug/app-main-debug.apk dist/aerial-voice-main-debug.apk
+          cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest-debug.apk
+          cp korobovo-upstream/app/build/outputs/apk/guard/release/*.apk dist/aerial-korobovo-voice-bridge.apk
+          cp tools/install-full-assistant.ps1 dist/
+          cp README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-vosk-test-0.5.2.zip aerial-voice-vosk-test-debug.apk install-mic-test.ps1 remove-mic-test.ps1 diagnose-mic-test.ps1 README.md HANDOFF_NEXT_CHAT.md
+          zip -r aerial-voice-0.6.0-full-assistant.zip aerial-voice-main-debug.apk aerial-voice-mictest-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
 
-      - name: Upload APK and scripts
+      - name: Upload combined APKs and installer
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-vosk-test-0.5.2
+          name: aerial-voice-0.6.0-full-assistant
           path: |
-            dist/aerial-voice-vosk-test-debug.apk
-            dist/aerial-voice-vosk-test-0.5.2.zip
+            dist/aerial-voice-main-debug.apk
+            dist/aerial-voice-mictest-debug.apk
+            dist/aerial-korobovo-voice-bridge.apk
+            dist/aerial-voice-0.6.0-full-assistant.zip
             dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md

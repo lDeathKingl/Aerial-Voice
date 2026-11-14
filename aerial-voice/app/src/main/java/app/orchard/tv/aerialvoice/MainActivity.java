@@ -2,6 +2,7 @@ package app.orchard.tv.aerialvoice;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ComponentName;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -25,11 +26,17 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
+import android.widget.Spinner;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
 
 
 
@@ -37,7 +44,10 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private static final int REQUEST_AUDIO = 4101;
     private static final String PREFS = "aerial_voice_settings";
     private static final String HISTORY_KEY = "conversation_history_json";
+    private static final int MAX_HISTORY_MESSAGES = 30;
     private static final String EXTRA_START_LISTENING = "app.orchard.tv.aerialvoice.START_LISTENING";
+    private static final String EXTRA_STOP_LISTENING = "app.orchard.tv.aerialvoice.STOP_LISTENING";
+    private static final String EXTRA_SET_CONTINUOUS = "app.orchard.tv.aerialvoice.SET_CONTINUOUS";
     private static final String EXTRA_CONTINUOUS = "app.orchard.tv.aerialvoice.CONTINUOUS_MODE";
     private static final int BG = Color.rgb(7, 17, 31);
     private static final int PANEL = Color.rgb(16, 31, 49);
@@ -56,12 +66,32 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private TextView answerText;
     private TextView diagnosticsText;
     private Button listenButton;
+    private Button dialogueButton;
+    private Button autoStartButton;
+    private boolean pendingRemoteStart;
+    private boolean pendingRemoteStop;
+    private final Runnable pendingRemoteStartRunnable = () -> {
+        if (!pendingRemoteStart) return;
+        pendingRemoteStart = false;
+        startListening(false);
+        if (pendingRemoteStop) {
+            pendingRemoteStop = false;
+            if (speech != null) speech.stopListening();
+        }
+    };
+    private final Runnable autoListenRunnable = () -> {
+        if (continuousMode && !remotePttActive && speech != null && !speech.isListening()) {
+            setStatus("Свободный диалог: проверяю, доступен ли микрофон без удержания кнопки…", CYAN);
+            startListening(true);
+        }
+    };
     private RemoteMicTester remoteMicTester;
     private AlertDialog remoteMicDialog;
     private boolean continuousMode;
     private boolean remotePttActive;
     private final Runnable activityF5Long = () -> {
         continuousMode = true;
+        updateFeatureButtons();
         setStatus("Режим диалога включён. Отпусти кнопку после фразы.", GREEN);
     };
 
@@ -71,7 +101,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
-        speech = new SpeechEngine(this, this);
+        String selectedEngine = getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_engine", "");
+        speech = new SpeechEngine(this, this, selectedEngine);
         String bootstrapStatus = importBootstrapKey();
         applyVoiceSettings();
         loadHistory();
@@ -146,9 +177,28 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     private void handleLaunchIntent(Intent intent) {
         if (intent == null) return;
+        if (intent.getBooleanExtra(EXTRA_SET_CONTINUOUS, false)) {
+            continuousMode = intent.getBooleanExtra(EXTRA_CONTINUOUS, false);
+            updateFeatureButtons();
+        }
         boolean start = intent.getBooleanExtra(EXTRA_START_LISTENING, false);
-        continuousMode = intent.getBooleanExtra(EXTRA_CONTINUOUS, false);
-        if (start) handler.postDelayed(this::startListening, 450L);
+        boolean stop = intent.getBooleanExtra(EXTRA_STOP_LISTENING, false);
+        if (start) {
+            pendingRemoteStart = true;
+            pendingRemoteStop = false;
+            handler.removeCallbacks(pendingRemoteStartRunnable);
+            handler.postDelayed(pendingRemoteStartRunnable, 320L);
+        }
+        if (stop) {
+            handler.removeCallbacks(pendingRemoteStartRunnable);
+            if (speech != null && speech.isListening()) {
+                speech.stopListening();
+            } else if (pendingRemoteStart) {
+                pendingRemoteStart = false;
+                pendingRemoteStop = false;
+                setStatus("Кнопка отпущена до готовности микрофона. Повтори нажатие после загрузки Vosk.", Color.rgb(251, 146, 60));
+            }
+        }
     }
 
     private void buildUi() {
@@ -166,7 +216,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("AERIAL VOICE · 0.5.1", 13, MUTED, true);
+        TextView version = text("AERIAL VOICE · 0.6.0", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -229,6 +279,34 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         addWeighted(secondaryActions, aiTest);
         content.addView(secondaryActions);
 
+        LinearLayout featureActions = new LinearLayout(this);
+        featureActions.setOrientation(LinearLayout.HORIZONTAL);
+        featureActions.setPadding(0, 0, 0, dp(12));
+        Button historyButton = button("История", false);
+        historyButton.setOnClickListener(v -> showHistory());
+        Button memoryButton = button("Долговременная память", false);
+        memoryButton.setOnClickListener(v -> showMemorySettings());
+        Button tvButton = button("Управление ТВ", false);
+        tvButton.setOnClickListener(v -> showTvControls());
+        addWeighted(featureActions, historyButton);
+        addWeighted(featureActions, memoryButton);
+        addWeighted(featureActions, tvButton);
+        content.addView(featureActions);
+
+        LinearLayout modeActions = new LinearLayout(this);
+        modeActions.setOrientation(LinearLayout.HORIZONTAL);
+        modeActions.setPadding(0, 0, 0, dp(12));
+        dialogueButton = button("Диалог: ВЫКЛ", false);
+        dialogueButton.setOnClickListener(v -> toggleDialogueMode());
+        autoStartButton = button("Автозапуск: ВЫКЛ", false);
+        autoStartButton.setOnClickListener(v -> toggleAutoStart());
+        Button contextButton = button("Контекст ТВ", false);
+        contextButton.setOnClickListener(v -> showTvContext());
+        addWeighted(modeActions, dialogueButton);
+        addWeighted(modeActions, autoStartButton);
+        addWeighted(modeActions, contextButton);
+        content.addView(modeActions);
+
         Button micTest = button("Проверить микрофон пульта · RC In", false);
         micTest.setOnClickListener(v -> showRemoteMicTest());
         LinearLayout.LayoutParams micTestLp = new LinearLayout.LayoutParams(-1, dp(50));
@@ -258,6 +336,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         root.addView(footer);
 
         setContentView(root);
+        updateFeatureButtons();
         listenButton.requestFocus();
     }
 
@@ -313,22 +392,29 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
-    private void startListening() {
+    private void startListening() { startListening(false); }
+
+    private void startListening(boolean handsFree) {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
             return;
         }
         if (speech != null) speech.stopSpeaking();
-        if (listenButton != null) listenButton.setText("●  СЛУШАЮ…");
-        speech.startListening();
+        if (listenButton != null) listenButton.setText(handsFree ? "●  СЛУШАЮ СВОБОДНО…" : "●  СЛУШАЮ…");
+        speech.startListening(handsFree);
     }
 
     private void stopListening() {
         continuousMode = false;
         remotePttActive = false;
+        pendingRemoteStart = false;
+        pendingRemoteStop = false;
+        handler.removeCallbacks(pendingRemoteStartRunnable);
+        handler.removeCallbacks(autoListenRunnable);
         handler.removeCallbacks(activityF5Long);
         if (speech != null) speech.cancel();
         if (listenButton != null) listenButton.setText("●  НАЧАТЬ РАЗГОВОР");
+        updateFeatureButtons();
         setStatus("Остановлено", MUTED);
     }
 
@@ -354,8 +440,18 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     }
 
     @Override public void onSpeechDone() {
-        if (continuousMode) setStatus("Диалог активен. Удерживай кнопку микрофона для следующего вопроса.", GREEN);
-        else setStatus("Ответ озвучен", GREEN);
+        if (continuousMode) {
+            setStatus("Ответ озвучен. Пытаюсь продолжить слушать автоматически…", GREEN);
+            scheduleContinuousIfNeeded();
+        } else {
+            setStatus("Ответ озвучен", GREEN);
+        }
+    }
+
+    @Override public void onNoSpeechTimeout() {
+        if (listenButton != null) listenButton.setText("●  НАЧАТЬ РАЗГОВОР");
+        setStatus("Микрофон RC In не передал речь без удержания F5", Color.rgb(251, 146, 60));
+        setAnswer("Телевизор не передаёт звук с микрофона пульта в режиме свободного ожидания. Для следующей реплики удерживай кнопку микрофона. После ответа помощник снова попробует перейти в свободное прослушивание.");
     }
 
     @Override
@@ -366,9 +462,60 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         addHistory("user", recognized);
 
         String normalized = recognized.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        if (normalized.startsWith("запомни ") || normalized.startsWith("запомни что ")) {
+            String fact = recognized.replaceFirst("(?i)^\\s*запомни(?:\\s+что)?\\s*", "").trim();
+            boolean saved = MemoryStore.add(this, fact);
+            String message = saved ? "Запомнил. Сохранил это в долговременную память на телевизоре."
+                    : "Этот факт уже сохранён или не удалось записать его в память.";
+            setAnswer(message);
+            addHistory("assistant", message);
+            speech.speak(message);
+            refreshDiagnostics();
+            return;
+        }
+        if (normalized.contains("что ты помнишь") || normalized.contains("что ты обо мне помнишь")) {
+            List<String> facts = MemoryStore.read(this);
+            String message;
+            if (facts.isEmpty()) message = "Пока долговременная память пустая. Скажи: запомни, что…";
+            else {
+                StringBuilder remembered = new StringBuilder("Я помню следующее: ");
+                for (int i = 0; i < facts.size(); i++) {
+                    if (i > 0) remembered.append("; ");
+                    remembered.append(facts.get(i));
+                }
+                message = remembered.toString();
+            }
+            setAnswer(message);
+            addHistory("assistant", message);
+            speech.speak(message);
+            return;
+        }
+        if (normalized.startsWith("забудь все") || normalized.startsWith("забудь всё")
+                || normalized.equals("очисти память") || normalized.equals("удали всю память")) {
+            MemoryStore.clear(this);
+            String message = "Долговременная память очищена.";
+            setAnswer(message);
+            addHistory("assistant", message);
+            speech.speak(message);
+            refreshDiagnostics();
+            return;
+        }
+        if (normalized.startsWith("забудь ")) {
+            String phrase = recognized.replaceFirst("(?i)^\\s*забудь\\s*", "").trim();
+            int removed = MemoryStore.forget(this, phrase);
+            String message = removed > 0 ? "Удалил из памяти " + removed + " совпадающих факта."
+                    : "Не нашёл в памяти факт с таким текстом.";
+            setAnswer(message);
+            addHistory("assistant", message);
+            speech.speak(message);
+            refreshDiagnostics();
+            return;
+        }
         if (normalized.contains("закончить диалог") || normalized.contains("заверши диалог")
                 || normalized.contains("останови диалог") || normalized.contains("выйти из диалога")) {
             continuousMode = false;
+            handler.removeCallbacks(autoListenRunnable);
+            updateFeatureButtons();
             String message = "Хорошо, диалог завершён.";
             setAnswer(message);
             addHistory("assistant", message);
@@ -398,8 +545,11 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
             setAnswer(local.message);
             addHistory("assistant", local.message);
             speech.speak(local.message);
-            if (local.message.startsWith("Открываю ")) continuousMode = false;
-            else if (!speech.isTtsReady()) scheduleContinuousIfNeeded();
+            if (local.message.startsWith("Открываю ")) {
+                continuousMode = false;
+                handler.removeCallbacks(autoListenRunnable);
+                updateFeatureButtons();
+            } else if (!speech.isTtsReady()) scheduleContinuousIfNeeded();
             return;
         }
 
@@ -415,7 +565,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
         setStatus("Отправляю запрос ИИ…", CYAN);
         setAnswer("Думаю над ответом…");
-        AiClient.ask(this, history, new AiClient.Callback() {
+        AiClient.ask(this, history, TvContextProvider.snapshot(this), MemoryStore.read(this), new AiClient.Callback() {
             @Override public void onStatus(String message) {
                 runOnUiThread(() -> {
                     if (!isFinishing() && !isDestroyed()) setStatus(message, CYAN);
@@ -490,12 +640,16 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         remotePttActive = false;
         setStatus(message, Color.rgb(251, 146, 60));
         setAnswer(message + " Если проблема повторяется, открой диагностику и проверь RC In.");
-        if (continuousMode) scheduleContinuousIfNeeded();
+        if (continuousMode) {
+            setStatus("Ошибка распознавания. Для следующей фразы удерживай F5; свободное прослушивание будет проверено после следующего ответа.", Color.rgb(251, 146, 60));
+        }
         refreshDiagnostics();
     }
 
     private void scheduleContinuousIfNeeded() {
-        if (continuousMode) setStatus("Готов к следующему вопросу. Удерживай кнопку микрофона.", GREEN);
+        if (!continuousMode) return;
+        handler.removeCallbacks(autoListenRunnable);
+        handler.postDelayed(autoListenRunnable, 750L);
     }
 
     private void loadHistory() {
@@ -503,7 +657,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
             String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(HISTORY_KEY, "");
             if (saved == null || saved.isEmpty()) return;
             JSONArray stored = new JSONArray(saved);
-            for (int i = Math.max(0, stored.length() - 12); i < stored.length(); i++) {
+            for (int i = Math.max(0, stored.length() - MAX_HISTORY_MESSAGES); i < stored.length(); i++) {
                 JSONObject item = stored.optJSONObject(i);
                 if (item == null) continue;
                 String role = item.optString("role", "");
@@ -523,8 +677,9 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     private void addHistory(String role, String content) {
         try {
-            history.put(new JSONObject().put("role", role).put("content", content));
-            while (history.length() > 12) history.remove(0);
+            history.put(new JSONObject().put("role", role).put("content", content)
+                    .put("timestamp", System.currentTimeMillis()));
+            while (history.length() > MAX_HISTORY_MESSAGES) history.remove(0);
             saveHistory();
         } catch (Exception ignored) { }
     }
@@ -562,11 +717,31 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         EditText pitch = field("Высота голоса: 0.7–1.3", String.valueOf(prefs.getFloat("tts_pitch", 1.0f)),
                 InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        List<SpeechEngine.EngineChoice> engineOptions = speech == null
+                ? new ArrayList<>() : speech.getAvailableTtsEngines();
+        List<String> engineLabels = new ArrayList<>();
+        engineLabels.add("Системный по умолчанию");
+        for (SpeechEngine.EngineChoice option : engineOptions) {
+            engineLabels.add(option.label + " (" + option.packageName + ")");
+        }
+        Spinner enginePicker = new Spinner(this);
+        ArrayAdapter<String> engineAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, engineLabels);
+        engineAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        enginePicker.setAdapter(engineAdapter);
+        String selectedEngine = prefs.getString("tts_engine", "");
+        int selectedIndex = 0;
+        for (int i = 0; i < engineOptions.size(); i++) {
+            if (engineOptions.get(i).packageName.equals(selectedEngine)) selectedIndex = i + 1;
+        }
+        enginePicker.setSelection(selectedIndex);
         form.addView(label("Скорость речи (1.0 — обычная)"));
         form.addView(rate);
         form.addView(label("Высота голоса (1.0 — обычная)"));
         form.addView(pitch);
-        form.addView(label("Изменения применяются к русской озвучке телевизора."));
+        form.addView(label("Голосовой движок"));
+        form.addView(enginePicker);
+        form.addView(label("Выбери установленный движок, например RHVoice. Изменения применяются к русской озвучке телевизора."));
         Button testVoice = button("Проверить русскую озвучку", false);
         form.addView(testVoice);
         AlertDialog voiceDialog = new AlertDialog.Builder(this).setTitle("Настройки голоса").setView(form)
@@ -577,8 +752,13 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                         if (newRate < 0.65f || newRate > 1.4f || newPitch < 0.7f || newPitch > 1.3f) {
                             throw new IllegalArgumentException("Значения вне допустимого диапазона.");
                         }
-                        prefs.edit().putFloat("tts_rate", newRate).putFloat("tts_pitch", newPitch).apply();
+                        int engineIndex = enginePicker.getSelectedItemPosition();
+                        String newEngine = engineIndex <= 0 || engineIndex - 1 >= engineOptions.size()
+                                ? "" : engineOptions.get(engineIndex - 1).packageName;
+                        prefs.edit().putFloat("tts_rate", newRate).putFloat("tts_pitch", newPitch)
+                                .putString("tts_engine", newEngine).apply();
                         speech.setVoiceSettings(newRate, newPitch);
+                        speech.setTtsEngine(newEngine);
                         setStatus("Настройки голоса сохранены", GREEN);
                         speech.speak("Настройки голоса сохранены.");
                     } catch (Exception e) {
@@ -796,7 +976,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         String ttsState = speech == null ? "не запущена" : speech.getTtsShortState();
         diagnosticsText.setText("Vosk: " + modelState + " · Русская озвучка: " + ttsState
                 + " · ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен")
-                + " · Контекст: " + history.length() + "/12");
+                + " · История: " + history.length() + "/" + MAX_HISTORY_MESSAGES
+                + " · Память: " + MemoryStore.count(this));
     }
 
     private void showDiagnostics() {
@@ -824,6 +1005,152 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 .setPositiveButton("Закрыть", null)
                 .setNeutralButton("Открыть настройки специальных возможностей", (d, w) -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
                 .show();
+    }
+
+    private void updateFeatureButtons() {
+        if (dialogueButton != null) dialogueButton.setText(continuousMode ? "Диалог: ВКЛ" : "Диалог: ВЫКЛ");
+        if (autoStartButton != null) {
+            boolean enabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("auto_start_enabled", false);
+            autoStartButton.setText(enabled ? "Автозапуск: ВКЛ" : "Автозапуск: ВЫКЛ");
+        }
+    }
+
+    private void toggleDialogueMode() {
+        continuousMode = !continuousMode;
+        updateFeatureButtons();
+        if (continuousMode) {
+            setStatus("Режим диалога включён. После ответа попробую слушать автоматически.", GREEN);
+            if (speech != null && !speech.isListening()) startListening(true);
+        } else {
+            handler.removeCallbacks(autoListenRunnable);
+            if (speech != null && speech.isListening() && !remotePttActive) speech.cancel();
+            setStatus("Режим диалога выключен", MUTED);
+        }
+    }
+
+    private void toggleAutoStart() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        boolean enabled = !prefs.getBoolean("auto_start_enabled", false);
+        prefs.edit().putBoolean("auto_start_enabled", enabled).apply();
+        updateFeatureButtons();
+        if (enabled) {
+            setStatus("Автозапуск включён", GREEN);
+            if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+                setAnswer("Для запуска приложения после включения телевизора установщик должен выдать Aerial Voice разрешение SYSTEM_ALERT_WINDOW через ADB.");
+            } else {
+                setAnswer("Aerial Voice будет открываться после полной загрузки телевизора.");
+            }
+        } else {
+            setStatus("Автозапуск выключен", MUTED);
+        }
+    }
+
+    private void showHistory() {
+        StringBuilder content = new StringBuilder();
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item == null) continue;
+            String role = item.optString("role", "");
+            String message = item.optString("content", "");
+            content.append("user".equals(role) ? "ТЫ: " : "AERIAL: ").append(message).append("\n\n");
+        }
+        if (content.length() == 0) content.append("История пока пустая.");
+        TextView view = text(content.toString(), 16, TEXT, false);
+        view.setPadding(dp(14), dp(10), dp(14), dp(10));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(view);
+        new AlertDialog.Builder(this).setTitle("История разговора")
+                .setView(scroll)
+                .setPositiveButton("Закрыть", null)
+                .setNeutralButton("Очистить", (d, w) -> confirmClearHistory())
+                .show();
+    }
+
+    private void showMemorySettings() {
+        List<String> facts = MemoryStore.read(this);
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(16), dp(8), dp(16), dp(8));
+        form.addView(text("Факты хранятся зашифрованными на этом телевизоре. В запрос GigaChat они добавляются только как контекст. Нажми на факт, чтобы удалить его.", 14, MUTED, false));
+        ListView list = new ListView(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>(facts));
+        list.setAdapter(adapter);
+        form.addView(list, new LinearLayout.LayoutParams(-1, dp(190)));
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= facts.size()) return;
+            String selected = facts.get(position);
+            new AlertDialog.Builder(this).setTitle("Удалить факт?")
+                    .setMessage(selected)
+                    .setPositiveButton("Удалить", (d, w) -> {
+                        MemoryStore.forget(this, selected);
+                        showMemorySettings();
+                        refreshDiagnostics();
+                    }).setNegativeButton("Отмена", null).show();
+        });
+        EditText newFact = field("Например: предпочитаю короткие ответы", "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        form.addView(label("Добавить факт в память"));
+        form.addView(newFact);
+        Button add = button("Запомнить", true);
+        form.addView(add);
+        Button clear = button("Очистить всю память", false);
+        form.addView(clear);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Долговременная память")
+                .setView(form).setNegativeButton("Закрыть", null).create();
+        add.setOnClickListener(v -> {
+            String fact = newFact.getText().toString().trim();
+            if (fact.isEmpty()) return;
+            if (MemoryStore.add(this, fact)) {
+                dialog.dismiss();
+                showMemorySettings();
+                refreshDiagnostics();
+            } else {
+                newFact.setError("Факт пустой, уже сохранён или не удалось записать.");
+            }
+        });
+        clear.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Очистить всю память?")
+                .setMessage("История разговоров и API-ключ останутся. Удалятся только сохранённые факты.")
+                .setPositiveButton("Очистить", (d, w) -> {
+                    MemoryStore.clear(this);
+                    dialog.dismiss();
+                    showMemorySettings();
+                    refreshDiagnostics();
+                }).setNegativeButton("Отмена", null).show());
+        dialog.show();
+    }
+
+    private void showTvContext() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(18), dp(8), dp(18), dp(4));
+        TextView snapshot = text(TvContextProvider.snapshot(this), 15, TEXT, false);
+        form.addView(snapshot);
+        form.addView(label("Доступ к текущему приложению"));
+        Button usage = button("Разрешение статистики приложений", false);
+        usage.setOnClickListener(v -> {
+            try { startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); }
+            catch (Exception e) { setStatus("Настройки статистики приложений недоступны", MUTED); }
+        });
+        form.addView(usage);
+        form.addView(label("Доступ к названию фильма и медиасессии"));
+        Button media = button("Разрешение медиасессий", false);
+        media.setOnClickListener(v -> {
+            try { startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }
+            catch (Exception e) { setStatus("Настройки доступа к уведомлениям недоступны", MUTED); }
+        });
+        form.addView(media);
+        new AlertDialog.Builder(this).setTitle("Контекст телевизора")
+                .setView(form).setPositiveButton("Обновить", (d, w) -> showTvContext())
+                .setNegativeButton("Закрыть", null).show();
+    }
+
+    private void showTvControls() {
+        String[] options = {"Выбрать HDMI / TV-вход", "Открыть системные настройки источников", "Открыть настройки телевизора"};
+        new AlertDialog.Builder(this).setTitle("Управление телевизором")
+                .setItems(options, (d, which) -> {
+                    if (which == 0) TvInputController.showPicker(this);
+                    else if (which == 1) TvInputController.openSystemInputs(this);
+                    else startActivity(new Intent(Settings.ACTION_SETTINGS));
+                }).setNegativeButton("Закрыть", null).show();
     }
 
     @Override
@@ -854,12 +1181,15 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     @Override
     protected void onResume() {
         super.onResume();
+        updateFeatureButtons();
         refreshDiagnostics();
     }
 
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        pendingRemoteStart = false;
+        pendingRemoteStop = false;
         stopRemoteMicTest();
         saveHistory();
         if (speech != null) speech.destroy();

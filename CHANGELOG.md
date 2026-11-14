@@ -64,3 +64,14 @@
 - Диагностика аудиовходов и recognition service.
 - PowerShell install/diagnostics/remove scripts.
 - Отдельный минимальный патчер F5 bridge для Aerial 1.95; не использует самостоятельную глобальную Accessibility-службу.
+
+## 0.6.0 — Full Assistant Patch
+
+- Added Xiaomi F5 DOWN/UP bridge through Aerial 1.95 HomeGuardService; preserved all existing key-filter, mouse, and gamepad safety checks.
+- Added hands-free Vosk capture after TTS with voice-activity endpointing and a bounded no-speech timeout; PTT remains the fallback when Xiaomi RC In is only active while the remote button is held.
+- Increased conversation history to 30 messages and added a history viewer.
+- Added locally encrypted long-term memory with explicit save/forget commands and a management screen.
+- Added TV context snapshots using UsageStats and optional active MediaSession metadata.
+- Added TTS engine selection, HDMI/TV input picker, ACTION_SEARCH movie handoff, media next/previous/rewind/fast-forward commands, and optional boot autostart.
+- Added a combined CI bundle containing Aerial Voice main/micTest APKs and a Korobovo v1.95 bridge APK.
+- No API credentials are embedded in source or APK. Existing GigaChat Authorization Key remains in Android Keystore.

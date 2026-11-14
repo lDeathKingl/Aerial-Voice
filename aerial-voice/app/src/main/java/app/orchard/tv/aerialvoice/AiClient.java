@@ -61,7 +61,15 @@ public final class AiClient {
     }
 
     public static void ask(Context context, JSONArray history, Callback callback) {
+        ask(context, history, "", java.util.Collections.emptyList(), callback);
+    }
+
+    public static void ask(Context context, JSONArray history, String tvContext,
+                           java.util.List<String> longTermMemory, Callback callback) {
         Context app = context.getApplicationContext();
+        final String contextSnapshot = tvContext == null ? "" : tvContext.trim();
+        final java.util.List<String> memorySnapshot = longTermMemory == null
+                ? java.util.Collections.emptyList() : new java.util.ArrayList<>(longTermMemory);
         IO.execute(() -> {
             try {
                 callback.onStatus("Проверяю сохранённый ключ GigaChat…");
@@ -69,8 +77,9 @@ public final class AiClient {
                 if (authKey.isEmpty()) throw new IllegalStateException("В Aerial Voice не найден сохранённый Authorization Key GigaChat. Открой «Настройки ИИ» и сохрани ключ.");
                 String model = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                         .getString(MODEL_KEY, DEFAULT_MODEL).trim();
-                JSONArray messages = buildMessages(history);
-                Log.i(TAG, "AI request started. model=" + model + ", messages=" + messages.length());
+                JSONArray messages = buildMessages(history, contextSnapshot, memorySnapshot);
+                Log.i(TAG, "AI request started. model=" + model + ", messages=" + messages.length()
+                        + ", memoryFacts=" + memorySnapshot.size() + ", tvContext=" + !contextSnapshot.isEmpty());
                 callback.onStatus("Получаю токен GigaChat…");
                 String token = getAccessToken(authKey, false);
                 String answer;
@@ -116,10 +125,23 @@ public final class AiClient {
         });
     }
 
-    private static JSONArray buildMessages(JSONArray history) throws Exception {
+    private static JSONArray buildMessages(JSONArray history, String tvContext,
+                                           java.util.List<String> longTermMemory) throws Exception {
         JSONArray messages = new JSONArray();
-        messages.put(new JSONObject().put("role", "system").put("content", SYSTEM_PROMPT));
-        for (int i = Math.max(0, history.length() - 12); i < history.length(); i++) {
+        StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
+        if (tvContext != null && !tvContext.trim().isEmpty()) {
+            system.append("\n\nКонтекст телевизора (автоматически определённый снимок, может быть неполным): ")
+                    .append(tvContext.trim());
+        }
+        if (longTermMemory != null && !longTermMemory.isEmpty()) {
+            system.append("\n\nДолговременная память, явно сохранённая пользователем. Используй только релевантные факты; если факт не относится к вопросу, игнорируй его:\n");
+            for (String fact : longTermMemory) {
+                if (fact != null && !fact.trim().isEmpty()) system.append("- ").append(fact.trim()).append("\n");
+            }
+        }
+        messages.put(new JSONObject().put("role", "system").put("content", system.toString()));
+        final int maxHistory = 30;
+        for (int i = Math.max(0, history.length() - maxHistory); i < history.length(); i++) {
             JSONObject item = history.getJSONObject(i);
             String role = item.optString("role", "");
             String content = item.optString("content", "").trim();
@@ -195,7 +217,7 @@ public final class AiClient {
             connection.setRequestProperty("Authorization", "Bearer " + token);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.5.0");
+            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.6.0");
             byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(payload.length);
             try (OutputStream out = connection.getOutputStream()) {

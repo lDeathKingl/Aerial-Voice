@@ -33,6 +33,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         void onError(String message);
         void onTtsReady(boolean ready, String detail);
         void onSpeechDone();
+        void onNoSpeechTimeout();
     }
 
     private final Context context;
@@ -46,6 +47,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private volatile boolean listening;
     private volatile boolean stopRequested;
     private volatile boolean deliverResult = true;
+    private volatile boolean handsFreeCapture;
     private volatile AudioRecord activeRecord;
     private Thread captureThread;
 
@@ -54,38 +56,19 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private volatile String ttsState = "инициализация";
     private volatile String ttsEngineName = "не определён";
     private volatile String ttsLanguageStatus = "не проверен";
+    private volatile String requestedTtsEngine = "";
     private volatile float speechRate = 1.0f;
     private volatile float speechPitch = 1.0f;
 
     public SpeechEngine(Context context, Listener listener) {
+        this(context, listener, "");
+    }
+
+    public SpeechEngine(Context context, Listener listener, String enginePackage) {
         this.context = context.getApplicationContext();
         this.listener = listener;
-
-        try {
-            tts = new TextToSpeech(this.context, this);
-            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override public void onStart(String id) {
-                    Log.i(TAG, "TTS playback started: " + id);
-                }
-                @Override public void onDone(String id) {
-                    Log.i(TAG, "TTS playback completed: " + id);
-                    if (!destroyed) main.post(() -> listener.onSpeechDone());
-                }
-                @Override public void onError(String id) {
-                    Log.e(TAG, "TTS playback failed: " + id);
-                    if (!destroyed) postStatus("Не удалось озвучить ответ. " + getTtsDiagnostics());
-                }
-                @Override public void onError(String id, int errorCode) {
-                    Log.e(TAG, "TTS playback failed: " + id + ", code=" + errorCode);
-                    if (!destroyed) postStatus("Ошибка TTS (код " + errorCode + "). " + getTtsDiagnostics());
-                }
-            });
-        } catch (Exception e) {
-            ttsReady = false;
-            ttsState = "ошибка запуска: " + safeMessage(e);
-            Log.e(TAG, "Could not initialize Android TTS", e);
-            postTtsReady(false, "Не удалось запустить синтез речи: " + safeMessage(e));
-        }
+        requestedTtsEngine = enginePackage == null ? "" : enginePackage.trim();
+        initializeTts();
 
         postStatus("Подготавливаю офлайн-распознавание Vosk…");
         VoskModelManager.prepare(this.context, new VoskModelManager.Listener() {
@@ -118,6 +101,78 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 modelLoading = false;
                 if (!destroyed) postError(message);
             }
+        });
+    }
+
+    private void initializeTts() {
+        try {
+            tts = requestedTtsEngine.isEmpty()
+                    ? new TextToSpeech(context, this)
+                    : new TextToSpeech(context, this, requestedTtsEngine);
+            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override public void onStart(String id) {
+                    Log.i(TAG, "TTS playback started: " + id);
+                }
+                @Override public void onDone(String id) {
+                    Log.i(TAG, "TTS playback completed: " + id);
+                    if (!destroyed) main.post(() -> listener.onSpeechDone());
+                }
+                @Override public void onError(String id) {
+                    Log.e(TAG, "TTS playback failed: " + id);
+                    if (!destroyed) postStatus("Не удалось озвучить ответ. " + getTtsDiagnostics());
+                }
+                @Override public void onError(String id, int errorCode) {
+                    Log.e(TAG, "TTS playback failed: " + id + ", code=" + errorCode);
+                    if (!destroyed) postStatus("Ошибка TTS (код " + errorCode + "). " + getTtsDiagnostics());
+                }
+            });
+        } catch (Exception e) {
+            ttsReady = false;
+            ttsState = "ошибка запуска: " + safeMessage(e);
+            Log.e(TAG, "Could not initialize Android TTS", e);
+            postTtsReady(false, "Не удалось запустить синтез речи: " + safeMessage(e));
+        }
+    }
+
+    public static final class EngineChoice {
+        public final String packageName;
+        public final String label;
+        public EngineChoice(String packageName, String label) {
+            this.packageName = packageName;
+            this.label = label;
+        }
+    }
+
+    public java.util.List<EngineChoice> getAvailableTtsEngines() {
+        java.util.List<EngineChoice> result = new java.util.ArrayList<>();
+        if (tts == null) return result;
+        try {
+            for (TextToSpeech.EngineInfo info : tts.getEngines()) {
+                if (info != null && info.name != null && !info.name.trim().isEmpty()) {
+                    result.add(new EngineChoice(info.name, info.label == null ? info.name : info.label.toString()));
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Could not enumerate TTS engines", e);
+        }
+        return result;
+    }
+
+    public String getRequestedTtsEngine() { return requestedTtsEngine; }
+
+    public void setTtsEngine(String packageName) {
+        String selected = packageName == null ? "" : packageName.trim();
+        if (selected.equals(requestedTtsEngine)) return;
+        requestedTtsEngine = selected;
+        main.post(() -> {
+            if (tts != null) {
+                try { tts.stop(); tts.shutdown(); } catch (Exception ignored) { }
+                tts = null;
+            }
+            ttsReady = false;
+            ttsState = "переключение движка";
+            ttsEngineName = selected.isEmpty() ? "системный по умолчанию" : selected;
+            initializeTts();
         });
     }
 
@@ -173,6 +228,11 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
     /** Starts a capture session. The caller should stop it when the remote mic key is released. */
     public synchronized void startListening() {
+        startListening(false);
+    }
+
+    /** Hands-free capture ends a phrase after speech followed by silence, or times out safely. */
+    public synchronized void startListening(boolean handsFree) {
         if (destroyed || listening) return;
         if (!modelReady || model == null) {
             postError(modelLoading
@@ -183,6 +243,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
         stopRequested = false;
         deliverResult = true;
+        handsFreeCapture = handsFree;
         listening = true;
         captureThread = new Thread(this::captureFromRemoteMic, "AerialVoice-Vosk-RCIn");
         captureThread.start();
@@ -213,6 +274,11 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         String failure = null;
         StringBuilder completed = new StringBuilder();
         boolean routeConfirmed = false;
+        boolean voiceDetected = false;
+        boolean noSpeechTimeout = false;
+        long captureStartedAt = android.os.SystemClock.elapsedRealtime();
+        long lastVoiceAt = captureStartedAt;
+        final boolean handsFreeSession = handsFreeCapture;
         try {
             recognizer = new Recognizer(model, SAMPLE_RATE);
             AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -284,6 +350,22 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             while (!stopRequested) {
                 int count = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
                 if (count > 0) {
+                    if (handsFreeSession) {
+                        long nowElapsed = android.os.SystemClock.elapsedRealtime();
+                        long rms = rms(samples, count);
+                        if (rms >= 140L) {
+                            voiceDetected = true;
+                            lastVoiceAt = nowElapsed;
+                        } else if (!voiceDetected && nowElapsed - captureStartedAt >= 12000L) {
+                            noSpeechTimeout = true;
+                            deliverResult = false;
+                            stopRequested = true;
+                            break;
+                        } else if (voiceDetected && nowElapsed - lastVoiceAt >= 1350L) {
+                            stopRequested = true;
+                            break;
+                        }
+                    }
                     if (recognizer.acceptWaveForm(samples, count)) {
                         String segment = readJsonText(recognizer.getResult(), "text");
                         appendText(completed, segment);
@@ -332,17 +414,30 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             listening = false;
             final String result = completed.toString().trim();
             final String error = failure;
-            final boolean shouldDeliver = deliverResult && !destroyed;
+            final boolean timedOut = noSpeechTimeout;
+            final boolean shouldNotify = !destroyed && (deliverResult || timedOut);
+            handsFreeCapture = false;
             if (destroyed) closeModelIfIdle();
-            if (shouldDeliver) {
+            if (shouldNotify) {
                 main.post(() -> {
                     if (destroyed) return;
-                    if (!result.isEmpty()) listener.onFinal(result);
+                    if (timedOut) listener.onNoSpeechTimeout();
+                    else if (!result.isEmpty()) listener.onFinal(result);
                     else if (error != null && !error.isEmpty()) listener.onError("Ошибка Vosk: " + error);
                     else listener.onError("Речь не распознана. Удерживай кнопку микрофона и произнеси фразу целиком.");
                 });
             }
         }
+    }
+
+    private long rms(short[] samples, int count) {
+        if (samples == null || count <= 0) return 0L;
+        long sum = 0L;
+        for (int i = 0; i < count; i++) {
+            long value = samples[i];
+            sum += value * value;
+        }
+        return (long) Math.sqrt((double) sum / count);
     }
 
     private AudioDeviceInfo findRemoteMic(AudioDeviceInfo[] devices) {
@@ -412,7 +507,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         if (destroyed) return;
         if (tts != null) {
             try {
-                String engine = tts.getDefaultEngine();
+                String engine = requestedTtsEngine.isEmpty() ? tts.getDefaultEngine() : requestedTtsEngine;
                 if (engine != null && !engine.trim().isEmpty()) ttsEngineName = engine;
             } catch (Exception ignored) { }
         }

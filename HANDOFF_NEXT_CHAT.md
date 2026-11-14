@@ -143,3 +143,21 @@
 - Diagnostics dialog includes TTS detail. VersionCode 8, versionName 0.5.2. Existing app data and stored Authorization Key should be preserved by in-place update using same GitHub Actions debug keystore.
 - Next: build and install 0.5.2; click "Тест ИИ" and "Проверить русскую озвучку". If AI test succeeds but voice dialogue doesn't, inspect onFinal/capture path; if AI test fails, exact error will show in answer panel. If AI succeeds but TTS test fails, use diagnostics engine list to select/install a Russian TTS engine.
 - XiaoAI remains disabled at user level; no system package changes in this update.
+
+## 0.6.0 — full assistant patch
+
+- Target device remains Xiaomi MiTV-MFTR0 / MT9653 / Android 14 SDK34; remote mic is RC In / MIBT.VoiceControl (input id 18); Vosk Russian small model and GigaChat work; RHVoice has been installed and Russian TTS works.
+- App package used for current update: `app.orchard.tv.aerialvoice.mictest`. Main package variant is `app.orchard.tv.aerialvoice`. Version 0.6.0, versionCode 9. Do not uninstall either package to solve signing errors.
+- Conversation history cap increased to 30; stored GigaChat key remains encrypted in SecretStore/Android Keystore and is not embedded in APK/source.
+- MemoryStore stores only explicit user-saved facts, encrypted using a separate Android Keystore AES-GCM alias. Voice commands: «запомни …», «что ты помнишь», «забудь …», «забудь всё». UI has a memory manager.
+- TvContextProvider adds the most recent non-system foreground app from UsageStats and MediaSessionBridge's active title/artist/playback state. UsageStats is granted by the combined installer with appops. Notification Listener access is attempted by ADB; if unavailable, use the «Контекст ТВ» dialog to open Android notification-listener settings.
+- Continuous mode starts a hands-free Vosk capture after TTS. It uses RC In / VOICE_RECOGNITION, ends an utterance after speech followed by silence, and times out after 12 seconds if no speech is detected. If Xiaomi only streams mic audio while F5 is held, use push-to-talk; this is a firmware limitation, not a Vosk language issue.
+- TvInputController enumerates Android TV passthrough inputs and opens them in a full-screen TvView. This depends on the TV firmware exposing those inputs. Voice search uses ACTION_SEARCH for Lampa/Zona/Kinopoisk when supported, otherwise opens the app and explains the fallback.
+- BootReceiver is optional and off by default. User enables «Автозапуск» in the UI; the installer grants SYSTEM_ALERT_WINDOW with appops to allow the BOOT_COMPLETED activity launch.
+- F5 bridge v2 is applied to clean upstream Aerial v1.95 in CI. It forwards only KEY_F5 from remote vendor 0x2717/product 0x32B8: DOWN starts capture, UP stops/submits, >=650 ms marks continuous mode. It does not alter HomeGuardService.updateKeyFilter() or mouse/gamepad protection. If a mouse/gamepad is attached and Aerial disables filtering, F5 will not be intercepted; do not force-enable filtering.
+- Combined workflow builds:
+  - `aerial-voice-main-debug.apk` (package app.orchard.tv.aerialvoice)
+  - `aerial-voice-mictest-debug.apk` (package app.orchard.tv.aerialvoice.mictest; current user's app)
+  - `aerial-korobovo-voice-bridge.apk` (package app.orchard.tv.korobovo)
+  - `aerial-voice-0.6.0-full-assistant.zip` with installer and docs.
+- The combined installer uses `adb install -r` only. On `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, it does not uninstall or clear data. Voice APK may update successfully while the Korobovo bridge update is skipped due to a different signing key; if that happens, keep the old launcher and diagnose the signature before any further action.

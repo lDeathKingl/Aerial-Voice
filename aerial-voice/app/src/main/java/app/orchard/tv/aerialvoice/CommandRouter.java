@@ -105,9 +105,47 @@ public final class CommandRouter {
             if (audio != null && android.os.Build.VERSION.SDK_INT >= 23) audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI);
             return new Result(true, "Звук включён.");
         }
+        Matcher search = Pattern.compile("^(?:найди фильм|найди сериал|поищи фильм|поищи|найди|поиск)\\s+(.+)$").matcher(q);
+        if (search.find()) {
+            String title = search.group(1).trim();
+            if (!title.isEmpty()) return searchFilm(context, title);
+        }
+
+        Matcher hdmi = Pattern.compile("(?:открой|включи|переключи(?:сь)?(?: на)?|переключи источник на)\\s*(?:hdmi|хдми)\\s*(\\d+)").matcher(q);
+        if (hdmi.find()) {
+            String input = "hdmi" + hdmi.group(1);
+            if (context instanceof Activity && TvInputController.openByQuery((Activity) context, input)) {
+                return new Result(true, "Переключаю на " + hdmi.group(0).replace("переключи", "").trim() + ".");
+            }
+            return new Result(true, "Не нашёл такой HDMI-вход среди источников, которые Android TV предоставляет приложениям.");
+        }
+        if (containsAny(q, "переключи источник", "открой источники", "покажи источники", "выбери источник", "список входов", "hdmi", "хдми")) {
+            if (context instanceof Activity) {
+                TvInputController.showPicker((Activity) context);
+                return new Result(true, "Открываю список доступных HDMI и TV-входов.");
+            }
+            return new Result(true, "Выбор источника доступен только на экране Aerial Voice.");
+        }
+
         if (containsAny(q, "пауза", "поставь на паузу", "останови воспроизведение")) {
             dispatchMedia(context, KeyEvent.KEYCODE_MEDIA_PAUSE);
             return new Result(true, "Пауза.");
+        }
+        if (containsAny(q, "следующий канал", "следующее видео", "следующий трек", "следующий фильм")) {
+            dispatchMedia(context, KeyEvent.KEYCODE_MEDIA_NEXT);
+            return new Result(true, "Переключаю на следующее.");
+        }
+        if (containsAny(q, "предыдущий канал", "предыдущее видео", "предыдущий трек")) {
+            dispatchMedia(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+            return new Result(true, "Переключаю на предыдущее.");
+        }
+        if (containsAny(q, "перемотай вперед", "быстрее")) {
+            dispatchMedia(context, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD);
+            return new Result(true, "Перематываю вперёд.");
+        }
+        if (containsAny(q, "перемотай назад", "назад на минуту")) {
+            dispatchMedia(context, KeyEvent.KEYCODE_MEDIA_REWIND);
+            return new Result(true, "Перематываю назад.");
         }
         if (containsAny(q, "продолжи", "возобнови", "продолжить воспроизведение", "играй")) {
             dispatchMedia(context, KeyEvent.KEYCODE_MEDIA_PLAY);
@@ -149,6 +187,34 @@ public final class CommandRouter {
             }
         }
         return new Result(false, "");
+    }
+
+    private static Result searchFilm(Context context, String title) {
+        String[] packages = {"top.rootu.lampa", "mobi.zona", "ru.kinopoisk.tv"};
+        for (String pkg : packages) {
+            try {
+                Intent search = new Intent(Intent.ACTION_SEARCH)
+                        .setPackage(pkg)
+                        .putExtra(SearchManager.QUERY, title)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (search.resolveActivity(context.getPackageManager()) != null) {
+                    context.startActivity(search);
+                    return new Result(true, "Передаю поиск фильма «" + title + "» в приложение.");
+                }
+            } catch (Exception ignored) { }
+        }
+        for (String pkg : packages) {
+            try {
+                Intent launch = context.getPackageManager().getLaunchIntentForPackage(pkg);
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(launch);
+                    return new Result(true, "Открыл приложение для поиска фильма «" + title
+                            + "». Если поиск не открылся сам, воспользуйся поиском внутри приложения.");
+                }
+            } catch (Exception ignored) { }
+        }
+        return new Result(true, "Не найдено установленное приложение для поиска фильмов. Установи Lampa, Zona или Кинопоиск.");
     }
 
     private static void dispatchMedia(Context context, int code) {

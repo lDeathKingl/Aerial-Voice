@@ -60,31 +60,11 @@ Write-Host "Installing Aerial Voice Vosk Test..." -ForegroundColor Cyan
 $installResult = Invoke-AdbCommand -Arguments @("install", "-r", $Apk)
 $installResult.Output | ForEach-Object { Write-Host $_ }
 
-if ($installResult.ExitCode -ne 0 -and (([string]::Join([Environment]::NewLine, $installResult.Output)) -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE")) {
-    Write-Host "Android found an older diagnostic app signed with a different key." -ForegroundColor Yellow
-    Write-Host "Only the separate test package will be removed: $Package" -ForegroundColor Yellow
-    Write-Host "Its local app data will be erased. The main Aerial Voice app will NOT be touched." -ForegroundColor Yellow
-    $confirmation = Read-Host "Remove the old test app and install Vosk Test? (Y/N)"
-    if ($confirmation -notmatch '^(?i:y|yes|д|да)$') {
-        throw "Cancelled. No app was uninstalled."
+if ($installResult.ExitCode -ne 0) {
+    if (([string]::Join([Environment]::NewLine, $installResult.Output)) -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+        throw "Signing conflict. The existing Aerial Voice test app and its data were NOT removed. Do not uninstall it; inspect the signing key first."
     }
-
-    Write-Host "Removing only the old diagnostic package..." -ForegroundColor Cyan
-    $uninstallResult = Invoke-AdbCommand -Arguments @("uninstall", $Package)
-    $uninstallResult.Output | ForEach-Object { Write-Host $_ }
-    if ($uninstallResult.ExitCode -ne 0) {
-        throw "Could not uninstall the old diagnostic package. The main Aerial Voice app was not changed."
-    }
-
-    Write-Host "Installing Vosk Test after removing the old test copy..." -ForegroundColor Cyan
-    $installResult = Invoke-AdbCommand -Arguments @("install", $Apk)
-    $installResult.Output | ForEach-Object { Write-Host $_ }
-    if ($installResult.ExitCode -ne 0) {
-        throw "Installation failed after removing the diagnostic package. The main Aerial Voice app was not changed."
-    }
-}
-elseif ($installResult.ExitCode -ne 0) {
-    throw "Installation failed for a reason other than a signing conflict. Check the ADB output above."
+    throw "Installation failed. The existing app and its data were not removed. Check the ADB output above."
 }
 
 if (-not [string]::IsNullOrWhiteSpace($BootstrapKeyFile)) {
