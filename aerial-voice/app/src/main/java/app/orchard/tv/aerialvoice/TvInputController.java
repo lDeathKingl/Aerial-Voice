@@ -29,7 +29,7 @@ public final class TvInputController {
             if (manager == null) return result;
             for (TvInputInfo info : manager.getTvInputList()) {
                 if (!info.isPassthroughInput()) continue;
-                CharSequence label = info.loadLabel(context.getPackageManager());
+                CharSequence label = info.loadLabel(context);
                 result.add(new InputChoice(info.getId(), label == null ? info.getId() : label.toString()));
             }
         } catch (Exception ignored) { }

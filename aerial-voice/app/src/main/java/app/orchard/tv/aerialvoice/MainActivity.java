@@ -61,6 +61,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final JSONArray history = new JSONArray();
     private SpeechEngine speech;
+    private boolean continuousMode;
+    private boolean remotePttActive;
     private LinearLayout root;
     private TextView statusText;
     private TextView transcriptText;
@@ -88,8 +90,6 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     };
     private RemoteMicTester remoteMicTester;
     private AlertDialog remoteMicDialog;
-    private boolean continuousMode;
-    private boolean remotePttActive;
     private final Runnable activityF5Long = () -> {
         continuousMode = true;
         updateFeatureButtons();
