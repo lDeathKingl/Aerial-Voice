@@ -75,3 +75,8 @@
 - Added TTS engine selection, HDMI/TV input picker, ACTION_SEARCH movie handoff, media next/previous/rewind/fast-forward commands, and optional boot autostart.
 - Added a combined CI bundle containing Aerial Voice main/micTest APKs and a Korobovo v1.95 bridge APK.
 - No API credentials are embedded in source or APK. Existing GigaChat Authorization Key remains in Android Keystore.
+
+- Added one-time history migration from the old debug package via adb run-as; old package data is not removed.
+- Corrected migration expectations: the old GigaChat key is Android Keystore UID-bound and cannot be exported by the new package. Installer prompts for one-time re-entry or accepts a local bootstrap file; old app remains installed with its key.
+- Added a concrete Russian TTS voice picker, not only engine selection.
+- Made the new debug signing key cache persistent even if the later Korobovo build fails.

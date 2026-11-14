@@ -43,7 +43,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: aerial-voice-debug-keystore-v1
+          key: aerial-voice-debug-keystore-v2
+          save-always: true
 
       - name: Create stable debug signing key if cache is empty
         run: |
