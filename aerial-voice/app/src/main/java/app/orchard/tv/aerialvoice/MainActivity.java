@@ -108,7 +108,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("AERIAL VOICE · 0.4.0", 13, MUTED, true);
+        TextView version = text("AERIAL VOICE · 0.5.0", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -493,67 +493,86 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(18), dp(8), dp(18), dp(4));
-        EditText endpoint = field("https://api.openai.com/v1/chat/completions",
-                prefs.getString("endpoint", "https://api.openai.com/v1/chat/completions"),
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        EditText model = field("Например: gpt-4o-mini", prefs.getString("model", "gpt-4o-mini"), InputType.TYPE_CLASS_TEXT);
-        EditText key = field("Вставь API-ключ (пусто — оставить прежний)", "",
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        TextView note = text("Подойдёт OpenAI-compatible Chat Completions API. Ключ хранится зашифрованным в Android Keystore. ChatGPT Plus сам по себе не включает API-кредиты.", 13, MUTED, false);
-        note.setPadding(0, dp(8), 0, dp(10));
-        TextView testStatus = text("Проверь соединение до сохранения настроек.", 14, MUTED, false);
-        testStatus.setPadding(0, dp(10), 0, dp(8));
-        Button test = button("Проверить соединение", true);
-        Button deleteKey = button("Удалить сохранённый API-ключ", false);
-        form.addView(label("API endpoint")); form.addView(endpoint);
-        form.addView(label("Название модели")); form.addView(model);
-        form.addView(label("API-ключ")); form.addView(key);
-        form.addView(note); form.addView(test); form.addView(testStatus); form.addView(deleteKey);
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Настройки Aerial AI")
-                .setView(form).setPositiveButton("Сохранить", null).setNegativeButton("Отмена", null).create();
+        EditText model = field("GigaChat-2", prefs.getString("gigachat_model", "GigaChat-2"), InputType.TYPE_CLASS_TEXT);
+        EditText key = field("Authorization Key GigaChat", "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        TextView note = text("Провайдер: GigaChat API · доступ для физлиц. Модель по умолчанию GigaChat-2 (Lite). Ключ сохраняется зашифрованным на телевизоре через Android Keystore. Токен доступа приложение получает и обновляет автоматически.", 13, MUTED, false);
+        note.setPadding(0, dp(8), 0, dp(10));
+        TextView testStatus = text("Вставь Authorization Key и проверь соединение. Для проверки запрос уйдёт в GigaChat.", 14, MUTED, false);
+        testStatus.setPadding(0, dp(10), 0, dp(8));
+        Button test = button("Проверить GigaChat", true);
+        Button deleteKey = button("Удалить сохранённый ключ", false);
+
+        form.addView(label("Модель GigaChat"));
+        form.addView(model);
+        form.addView(label("Authorization Key"));
+        form.addView(key);
+        form.addView(note);
+        form.addView(test);
+        form.addView(testStatus);
+        form.addView(deleteKey);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Настройки GigaChat")
+                .setView(form)
+                .setPositiveButton("Сохранить", null)
+                .setNegativeButton("Отмена", null)
+                .create();
 
         test.setOnClickListener(v -> {
             String enteredKey = key.getText().toString().trim();
             if (enteredKey.isEmpty()) {
                 try { enteredKey = SecretStore.read(this); }
-                catch (Exception e) { testStatus.setText("Не удалось прочитать ключ: " + e.getMessage()); return; }
+                catch (Exception e) { testStatus.setText("Не удалось прочитать сохранённый ключ: " + e.getMessage()); return; }
             }
             test.setEnabled(false);
-            testStatus.setText("Проверяю соединение с ИИ-сервером…");
-            AiClient.testConnection(this, endpoint.getText().toString().trim(), model.getText().toString().trim(),
-                    enteredKey, new AiClient.Callback() {
+            testStatus.setText("Получаю OAuth-токен и проверяю ответ GigaChat…");
+            AiClient.testConnection(this, model.getText().toString().trim(), enteredKey, new AiClient.Callback() {
                 @Override public void onSuccess(String answer) {
-                    runOnUiThread(() -> { test.setEnabled(true); testStatus.setText(answer); testStatus.setTextColor(GREEN); });
+                    runOnUiThread(() -> {
+                        test.setEnabled(true);
+                        testStatus.setText(answer);
+                        testStatus.setTextColor(GREEN);
+                    });
                 }
                 @Override public void onError(String message) {
-                    runOnUiThread(() -> { test.setEnabled(true); testStatus.setText("Ошибка: " + message); testStatus.setTextColor(Color.rgb(251, 146, 60)); });
+                    runOnUiThread(() -> {
+                        test.setEnabled(true);
+                        testStatus.setText("Ошибка: " + message);
+                        testStatus.setTextColor(Color.rgb(251, 146, 60));
+                    });
                 }
             });
         });
 
-        deleteKey.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Удалить API-ключ?")
-                .setMessage("Ключ будет удалён из зашифрованного хранилища телевизора.")
+        deleteKey.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Удалить сохранённый ключ?")
+                .setMessage("Authorization Key будет удалён из зашифрованного хранилища телевизора.")
                 .setPositiveButton("Удалить", (d, w) -> {
-                    try { SecretStore.save(this, ""); key.setText(""); testStatus.setText("Сохранённый API-ключ удалён."); refreshDiagnostics(); }
-                    catch (Exception e) { testStatus.setText("Не удалось удалить ключ: " + e.getMessage()); }
+                    try {
+                        SecretStore.save(this, "");
+                        key.setText("");
+                        testStatus.setText("Сохранённый ключ удалён.");
+                        refreshDiagnostics();
+                    } catch (Exception e) {
+                        testStatus.setText("Не удалось удалить ключ: " + e.getMessage());
+                    }
                 }).setNegativeButton("Отмена", null).show());
 
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String newEndpoint = endpoint.getText().toString().trim();
             String newModel = model.getText().toString().trim();
-            if (newEndpoint.isEmpty() || newModel.isEmpty()) {
-                testStatus.setText("Заполни API endpoint и название модели.");
+            if (newModel.isEmpty()) {
+                testStatus.setText("Укажи модель GigaChat, например GigaChat-2.");
                 testStatus.setTextColor(Color.rgb(251, 146, 60));
                 return;
             }
             try {
-                prefs.edit().putString("endpoint", newEndpoint).putString("model", newModel).apply();
+                prefs.edit().putString("gigachat_model", newModel).apply();
                 String newKey = key.getText().toString().trim();
                 if (!newKey.isEmpty()) SecretStore.save(this, newKey);
                 dialog.dismiss();
                 boolean configured = AiClient.isConfigured(this);
-                setStatus(configured ? "Настройки ИИ сохранены" : "Настройки сохранены · API-ключ не задан", configured ? GREEN : MUTED);
+                setStatus(configured ? "GigaChat настроен" : "Модель сохранена · Authorization Key не задан", configured ? GREEN : MUTED);
                 refreshDiagnostics();
             } catch (Exception e) {
                 testStatus.setText("Не удалось сохранить настройки: " + e.getMessage());

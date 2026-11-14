@@ -28,6 +28,12 @@ jobs:
       - name: Install Android SDK 34
         run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
 
+      - name: Download official Russian Trusted Root CA for GigaChat
+        run: |
+          mkdir -p aerial-voice/app/src/main/res/raw
+          curl --fail --location --retry 3 --retry-delay 2 "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt" -o aerial-voice/app/src/main/res/raw/russian_trusted_root_ca_pem.crt
+          test -s aerial-voice/app/src/main/res/raw/russian_trusted_root_ca_pem.crt
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -54,15 +60,15 @@ jobs:
           cp HANDOFF_NEXT_CHAT.md dist/
           cp CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-vosk-test-0.4.0.zip aerial-voice-vosk-test-debug.apk install-mic-test.ps1 remove-mic-test.ps1 diagnose-mic-test.ps1 README.md HANDOFF_NEXT_CHAT.md
+          zip -r aerial-voice-vosk-test-0.5.0.zip aerial-voice-vosk-test-debug.apk install-mic-test.ps1 remove-mic-test.ps1 diagnose-mic-test.ps1 README.md HANDOFF_NEXT_CHAT.md
 
       - name: Upload APK and scripts
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-vosk-test-0.4.0
+          name: aerial-voice-vosk-test-0.5.0
           path: |
             dist/aerial-voice-vosk-test-debug.apk
-            dist/aerial-voice-vosk-test-0.4.0.zip
+            dist/aerial-voice-vosk-test-0.5.0.zip
             dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md

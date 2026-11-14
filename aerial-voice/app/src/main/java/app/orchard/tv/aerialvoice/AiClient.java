@@ -10,11 +10,13 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** OpenAI-compatible Chat Completions client. No API key is bundled with the application. */
+/** GigaChat REST client. Authorization Key is stored only in the TV's Android Keystore-backed SecretStore. */
 public final class AiClient {
     public interface Callback {
         void onSuccess(String answer);
@@ -22,18 +24,23 @@ public final class AiClient {
     }
 
     private static final String PREFS = "aerial_voice_settings";
+    private static final String MODEL_KEY = "gigachat_model";
+    private static final String DEFAULT_MODEL = "GigaChat-2";
+    private static final String TOKEN_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth";
+    private static final String CHAT_URL = "https://api.giga.chat/v1/chat/completions";
+    private static final String SCOPE = "GIGACHAT_API_PERS";
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
-    private static final String DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
-    private static final String DEFAULT_MODEL = "gpt-4o-mini";
+    private static String cachedAccessToken = "";
+    private static long cachedTokenExpirySeconds = 0L;
+
     private static final String SYSTEM_PROMPT =
             "Ты Aerial Voice — русскоязычный голосовой помощник телевизора Xiaomi. " +
-            "Всегда отвечай только на русском языке. Говори естественно, понятно и по делу. " +
-            "Помни предыдущие сообщения диалога и используй их как контекст. " +
-            "Пользователь общается голосом: распознавание иногда ошибается, поэтому исправляй очевидные " +
-            "фонетические ошибки по смыслу, но не выдумывай недостающие факты и уточняй неоднозначное. " +
-            "Ответы предназначены для озвучивания: не используй Markdown, таблицы, длинные списки и " +
-            "декоративные символы, если пользователь явно этого не просит. Обычно отвечай кратко, " +
-            "но раскрывай тему подробно, когда об этом просят. " +
+            "Всегда отвечай по-русски, естественно и понятно. " +
+            "Учитывай предыдущие сообщения диалога. Пользователь говорит голосом, поэтому распознавание " +
+            "может ошибаться: исправляй очевидные фонетические ошибки по контексту, но не выдумывай факты " +
+            "и уточняй неоднозначное. Ответы предназначены для озвучивания: избегай Markdown, таблиц, " +
+            "длинных списков и декоративных символов, если пользователь явно этого не просит. " +
+            "Обычно отвечай кратко, но раскрывай тему подробно по просьбе. " +
             "Не утверждай, что управляешь телевизором, если действие не выполнено локальной командой приложения. " +
             "Если функция не поддерживается, честно объясни ограничение.";
 
@@ -43,124 +50,185 @@ public final class AiClient {
         try {
             if (SecretStore.read(context).isEmpty()) return false;
             SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            return !prefs.getString("endpoint", DEFAULT_ENDPOINT).trim().isEmpty()
-                    && !prefs.getString("model", DEFAULT_MODEL).trim().isEmpty();
-        } catch (Exception ignored) { return false; }
+            return !prefs.getString(MODEL_KEY, DEFAULT_MODEL).trim().isEmpty();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     public static void ask(Context context, JSONArray history, Callback callback) {
         Context app = context.getApplicationContext();
         IO.execute(() -> {
             try {
-                String key = SecretStore.read(app);
-                if (key.isEmpty()) throw new IllegalStateException("ИИ не настроен. Добавь API-ключ в настройках Aerial Voice.");
-                SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-                JSONArray messages = new JSONArray();
-                messages.put(new JSONObject().put("role", "system").put("content", SYSTEM_PROMPT));
-                for (int i = Math.max(0, history.length() - 12); i < history.length(); i++) {
-                    JSONObject item = history.getJSONObject(i);
-                    String role = item.optString("role", "");
-                    String content = item.optString("content", "").trim();
-                    if (("user".equals(role) || "assistant".equals(role)) && !content.isEmpty()) {
-                        messages.put(new JSONObject().put("role", role).put("content", content));
-                    }
+                String authKey = SecretStore.read(app);
+                if (authKey.isEmpty()) throw new IllegalStateException("GigaChat не настроен. Добавь Authorization Key в настройках Aerial Voice.");
+                String model = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        .getString(MODEL_KEY, DEFAULT_MODEL).trim();
+                JSONArray messages = buildMessages(history);
+                String token = getAccessToken(authKey, false);
+                try {
+                    callback.onSuccess(sendChat(token, model, messages));
+                } catch (ApiException e) {
+                    if (e.httpCode != 401) throw e;
+                    token = getAccessToken(authKey, true);
+                    callback.onSuccess(sendChat(token, model, messages));
                 }
-                callback.onSuccess(send(prefs.getString("endpoint", DEFAULT_ENDPOINT),
-                        prefs.getString("model", DEFAULT_MODEL), key, messages));
             } catch (Exception e) {
-                callback.onError(safeMessage(e));
+                callback.onError(friendlyError(e));
             }
         });
     }
 
-    public static void testConnection(Context context, String endpoint, String model, String suppliedKey, Callback callback) {
+    public static void testConnection(Context context, String modelValue, String suppliedKey, Callback callback) {
         Context app = context.getApplicationContext();
         IO.execute(() -> {
             try {
-                String key = suppliedKey == null || suppliedKey.trim().isEmpty()
+                String authKey = suppliedKey == null || suppliedKey.trim().isEmpty()
                         ? SecretStore.read(app) : suppliedKey.trim();
-                if (key.isEmpty()) throw new IllegalStateException("Сначала введи API-ключ.");
-                if (endpoint == null || endpoint.trim().isEmpty()) throw new IllegalStateException("Укажи API endpoint.");
-                if (model == null || model.trim().isEmpty()) throw new IllegalStateException("Укажи название модели.");
+                if (authKey.isEmpty()) throw new IllegalStateException("Введи Authorization Key GigaChat.");
+                String model = modelValue == null || modelValue.trim().isEmpty()
+                        ? DEFAULT_MODEL : modelValue.trim();
+                String token = getAccessToken(authKey, true);
                 JSONArray messages = new JSONArray();
                 messages.put(new JSONObject().put("role", "system").put("content", SYSTEM_PROMPT));
-                messages.put(new JSONObject().put("role", "user").put("content", "Проверь соединение. Ответь одним коротким словом: ГОТОВО."));
-                callback.onSuccess("Соединение успешно. Ответ модели: " + send(endpoint, model, key, messages));
+                messages.put(new JSONObject().put("role", "user")
+                        .put("content", "Проверь соединение. Ответь одним коротким словом: ГОТОВО."));
+                callback.onSuccess("GigaChat подключён. Модель: " + model + ". Ответ: " + sendChat(token, model, messages));
             } catch (Exception e) {
-                callback.onError(safeMessage(e));
+                callback.onError(friendlyError(e));
             }
         });
     }
 
-    private static String send(String endpointValue, String modelValue, String key, JSONArray messages) throws Exception {
-        String endpoint = normalizeEndpoint(endpointValue);
-        String model = modelValue == null ? "" : modelValue.trim();
-        if (model.isEmpty()) throw new IllegalArgumentException("Не указана модель ИИ.");
-        JSONObject body = new JSONObject().put("model", model).put("messages", messages).put("temperature", 0.35);
+    private static JSONArray buildMessages(JSONArray history) throws Exception {
+        JSONArray messages = new JSONArray();
+        messages.put(new JSONObject().put("role", "system").put("content", SYSTEM_PROMPT));
+        for (int i = Math.max(0, history.length() - 12); i < history.length(); i++) {
+            JSONObject item = history.getJSONObject(i);
+            String role = item.optString("role", "");
+            String content = item.optString("content", "").trim();
+            if (("user".equals(role) || "assistant".equals(role)) && !content.isEmpty()) {
+                messages.put(new JSONObject().put("role", role).put("content", content));
+            }
+        }
+        return messages;
+    }
+
+    /** OAuth access tokens expire after 30 minutes. Keep a small safety margin. */
+    private static synchronized String getAccessToken(String authKey, boolean forceRefresh) throws Exception {
+        long now = System.currentTimeMillis() / 1000L;
+        if (!forceRefresh && cachedAccessToken != null && !cachedAccessToken.isEmpty()
+                && cachedTokenExpirySeconds > now + 90L) {
+            return cachedAccessToken;
+        }
+
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(endpoint).openConnection();
+            connection = (HttpURLConnection) new URL(TOKEN_URL).openConnection();
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(45000);
+            connection.setConnectTimeout(20000);
+            connection.setReadTimeout(30000);
             connection.setDoOutput(true);
             connection.setUseCaches(false);
-            connection.setRequestProperty("Authorization", "Bearer " + key);
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setRequestProperty("Authorization", "Basic " + authKey.trim());
+            connection.setRequestProperty("RqUID", UUID.randomUUID().toString());
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.4.0");
-            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] payload = ("scope=" + URLEncoder.encode(SCOPE, "UTF-8")).getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(payload.length);
-            try (OutputStream out = connection.getOutputStream()) { out.write(payload); out.flush(); }
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(payload);
+                out.flush();
+            }
+
             int code = connection.getResponseCode();
-            InputStream stream = code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream();
-            String response = readAll(stream);
+            String response = readAll(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
             if (code < 200 || code >= 300) {
-                String detail = response;
-                try {
-                    JSONObject error = new JSONObject(response).optJSONObject("error");
-                    if (error != null) detail = error.optString("message", response);
-                } catch (Exception ignored) { }
-                throw new IllegalStateException("ИИ-сервер вернул HTTP " + code + ": " + shorten(detail, 320));
+                throw apiError(code, response, "Не удалось получить OAuth-токен GigaChat");
             }
             JSONObject json = new JSONObject(response);
-            JSONArray choices = json.optJSONArray("choices");
-            if (choices == null || choices.length() == 0) throw new IllegalStateException("ИИ вернул пустой ответ.");
-            JSONObject message = choices.getJSONObject(0).optJSONObject("message");
-            if (message == null) throw new IllegalStateException("В ответе ИИ отсутствует message.");
-            String answer = extractContent(message.opt("content")).trim();
-            if (answer.isEmpty()) throw new IllegalStateException("ИИ вернул пустой текст.");
-            return answer;
+            String token = json.optString("access_token", "").trim();
+            if (token.isEmpty()) throw new IllegalStateException("GigaChat не вернул access_token.");
+            long expiry = json.optLong("expires_at", now + 1700L);
+            if (expiry <= now) expiry = now + 1700L;
+            cachedAccessToken = token;
+            cachedTokenExpirySeconds = expiry;
+            return token;
         } catch (java.net.SocketTimeoutException e) {
-            throw new IllegalStateException("Истекло время ожидания ответа ИИ. Проверь интернет или VPN.", e);
+            throw new IllegalStateException("Тайм-аут при авторизации GigaChat. Проверь интернет-соединение телевизора.", e);
         } finally {
             if (connection != null) connection.disconnect();
         }
     }
 
-    private static String extractContent(Object content) {
-        if (content instanceof String) return (String) content;
-        if (content instanceof JSONArray) {
-            JSONArray parts = (JSONArray) content;
-            StringBuilder out = new StringBuilder();
-            for (int i = 0; i < parts.length(); i++) {
-                JSONObject part = parts.optJSONObject(i);
-                if (part == null) continue;
-                String text = part.optString("text", "").trim();
-                if (!text.isEmpty()) { if (out.length() > 0) out.append(' '); out.append(text); }
+    private static String sendChat(String token, String model, JSONArray messages) throws Exception {
+        if (model == null || model.trim().isEmpty()) throw new IllegalArgumentException("Не выбрана модель GigaChat.");
+        JSONObject body = new JSONObject()
+                .put("model", model.trim())
+                .put("messages", messages)
+                .put("temperature", 0.35);
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(CHAT_URL).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(20000);
+            connection.setReadTimeout(60000);
+            connection.setDoOutput(true);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.5.0");
+            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(payload.length);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(payload);
+                out.flush();
             }
-            return out.toString();
+
+            int code = connection.getResponseCode();
+            String response = readAll(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+            if (code < 200 || code >= 300) throw apiError(code, response, "Ошибка GigaChat API");
+
+            JSONObject json = new JSONObject(response);
+            JSONArray choices = json.optJSONArray("choices");
+            if (choices == null || choices.length() == 0) throw new IllegalStateException("GigaChat вернул пустой ответ.");
+            JSONObject message = choices.getJSONObject(0).optJSONObject("message");
+            if (message == null) throw new IllegalStateException("В ответе GigaChat отсутствует message.");
+            String answer = message.optString("content", "").trim();
+            if (answer.isEmpty()) throw new IllegalStateException("GigaChat вернул пустой текст.");
+            return answer;
+        } catch (java.net.SocketTimeoutException e) {
+            throw new IllegalStateException("GigaChat долго не отвечает. Проверь интернет-соединение телевизора.", e);
+        } finally {
+            if (connection != null) connection.disconnect();
         }
-        return "";
     }
 
-    private static String normalizeEndpoint(String value) {
-        String endpoint = value == null ? "" : value.trim();
-        if (endpoint.isEmpty()) endpoint = DEFAULT_ENDPOINT;
-        while (endpoint.endsWith("/")) endpoint = endpoint.substring(0, endpoint.length() - 1);
-        if (endpoint.endsWith("/chat/completions")) return endpoint;
-        if (endpoint.endsWith("/v1")) return endpoint + "/chat/completions";
-        return endpoint + "/v1/chat/completions";
+    private static ApiException apiError(int code, String response, String prefix) {
+        String detail = response == null ? "" : response;
+        try {
+            JSONObject json = new JSONObject(response);
+            JSONObject error = json.optJSONObject("error");
+            if (error != null) detail = error.optString("message", error.optString("description", response));
+            else detail = json.optString("message", json.optString("description", response));
+            String errorCode = json.optString("code", "");
+            if (!errorCode.isEmpty()) detail = errorCode + ": " + detail;
+        } catch (Exception ignored) { }
+        return new ApiException(code, prefix + " (HTTP " + code + "): " + shorten(detail, 360));
+    }
+
+    private static String friendlyError(Exception e) {
+        if (e instanceof javax.net.ssl.SSLHandshakeException
+                || e.getCause() instanceof javax.net.ssl.SSLHandshakeException) {
+            return "Не удалось проверить сертификат GigaChat. Проверь, что в сборку включён корневой сертификат НУЦ Минцифры и дата/время телевизора выставлены правильно.";
+        }
+        String message = e.getMessage();
+        if (message == null || message.trim().isEmpty()) return e.getClass().getSimpleName();
+        if (message.contains("HTTP 401")) return "GigaChat отклонил авторизацию. Проверь Authorization Key и тип доступа проекта.";
+        if (message.contains("HTTP 403")) return "GigaChat запретил запрос: возможно, для проекта не активирован доступ к выбранной модели или бесплатный лимит.";
+        if (message.contains("HTTP 429")) return "GigaChat временно ограничил частоту запросов. Подожди немного и повтори.";
+        return message;
     }
 
     private static String readAll(InputStream stream) throws Exception {
@@ -173,14 +241,17 @@ public final class AiClient {
         return out.toString();
     }
 
-    private static String safeMessage(Exception e) {
-        String message = e.getMessage();
-        return message == null || message.trim().isEmpty() ? e.getClass().getSimpleName() : message;
-    }
-
     private static String shorten(String value, int max) {
         if (value == null) return "";
         String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
         return clean.length() <= max ? clean : clean.substring(0, max) + "…";
+    }
+
+    private static final class ApiException extends Exception {
+        final int httpCode;
+        ApiException(int httpCode, String message) {
+            super(message);
+            this.httpCode = httpCode;
+        }
     }
 }

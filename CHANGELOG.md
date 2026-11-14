@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — GigaChat API
+- Добавлен отдельный клиент GigaChat REST API с OAuth-авторизацией для физлиц.
+- Authorization Key хранится только на Android TV в Android Keystore-backed AES-GCM SecretStore.
+- Добавлены кэширование/обновление Access Token и повтор запроса при HTTP 401.
+- Добавлена проверка OAuth и генерации ответа прямо из настроек.
+- Используется актуальный API endpoint api.giga.chat и модель по умолчанию GigaChat-2.
+- Добавлен доверенный корневой сертификат НУЦ Минцифры через Android Network Security Config.
+
+
 ## 0.4.0 — диалог, ИИ и голосовые настройки
 - Добавлена проверка соединения с OpenAI-compatible API до сохранения настроек.
 - Улучшена обработка ошибок API, тайм-аутов и вариантов текстового содержимого ответа.
