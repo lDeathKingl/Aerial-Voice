@@ -188,3 +188,13 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 - The installer can accept a local temporary key file using `-BootstrapKeyFile`, push it to the app-specific external files directory, and launch the app.
 - On startup the app imports the file into SecretStore (AES-GCM backed by Android Keystore), wipes and deletes the temporary file, and displays an import status.
 - The Authorization Key is not embedded in the APK, GitHub source, or standard release ZIP.
+
+
+## Aerial Voice 0.5.2 — AI and TTS diagnostics
+- Added visible progress stages for the real GigaChat conversation request.
+- Added a separate "Тест ИИ" button on the home screen. It tests the saved key and the same chat request path used by recognized speech.
+- Added Android TTS engine, installed engines, ru-RU language status and initialization state to diagnostics.
+- SpeechEngine no longer silently discards speech when TTS is unavailable; the reason is displayed.
+- Added a dedicated Russian TTS test button in voice settings.
+- Added Logcat events for OAuth HTTP status, chat completion HTTP status, AI request success/failure, TTS initialization and playback. No Authorization Key or access token is logged.
+- Existing XiaoAI disable state is not changed by this update.

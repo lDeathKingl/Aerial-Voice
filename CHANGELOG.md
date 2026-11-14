@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 — GigaChat and TTS diagnostics
+- Added a home-screen test that exercises the saved-key GigaChat request path.
+- Added visible AI request stages and detailed API error display.
+- Added TTS engine/language diagnostics and a voice test button.
+- Prevented silent TTS failures; logs omit all credentials and tokens.
+- No Xiaomi system packages are changed.
+
+
 ## 0.5.1 — one-time GigaChat key import
 - Added ADB one-time key bootstrap; no TV keyboard is needed.
 - App imports the temporary file into Android Keystore-backed SecretStore and deletes the temporary file.

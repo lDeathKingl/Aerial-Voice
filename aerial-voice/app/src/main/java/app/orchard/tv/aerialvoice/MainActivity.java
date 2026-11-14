@@ -222,8 +222,11 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         voiceSettings.setOnClickListener(v -> showVoiceSettings());
         Button clearChat = button("Очистить диалог", false);
         clearChat.setOnClickListener(v -> confirmClearHistory());
+        Button aiTest = button("Тест ИИ", false);
+        aiTest.setOnClickListener(v -> testAiFromHome());
         addWeighted(secondaryActions, voiceSettings);
         addWeighted(secondaryActions, clearChat);
+        addWeighted(secondaryActions, aiTest);
         content.addView(secondaryActions);
 
         Button micTest = button("Проверить микрофон пульта · RC In", false);
@@ -352,6 +355,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     @Override public void onSpeechDone() {
         if (continuousMode) setStatus("Диалог активен. Удерживай кнопку микрофона для следующего вопроса.", GREEN);
+        else setStatus("Ответ озвучен", GREEN);
     }
 
     @Override
@@ -412,6 +416,11 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         setStatus("Отправляю запрос ИИ…", CYAN);
         setAnswer("Думаю над ответом…");
         AiClient.ask(this, history, new AiClient.Callback() {
+            @Override public void onStatus(String message) {
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) setStatus(message, CYAN);
+                });
+            }
             @Override public void onSuccess(String answer) {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
@@ -430,6 +439,46 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                     setStatus("Не удалось получить ответ ИИ", Color.rgb(251, 146, 60));
                     speech.speak(message);
                     if (!speech.isTtsReady()) scheduleContinuousIfNeeded();
+                });
+            }
+        });
+    }
+
+    private void testAiFromHome() {
+        if (!AiClient.isConfigured(this)) {
+            setStatus("GigaChat не настроен", Color.rgb(251, 146, 60));
+            setAnswer("Не найден сохранённый Authorization Key. Открой «Настройки ИИ» и проверь подключение.");
+            return;
+        }
+        setStatus("Запускаю отдельный тест GigaChat…", CYAN);
+        setAnswer("Проверяю сохранённый ключ и реальный запрос к модели…");
+        JSONArray probe = new JSONArray();
+        try {
+            probe.put(new JSONObject().put("role", "user")
+                    .put("content", "Ответь коротко по-русски: «GigaChat работает»."));
+        } catch (Exception e) {
+            setAnswer("Не удалось подготовить тестовый запрос: " + e.getMessage());
+            return;
+        }
+        AiClient.ask(this, probe, new AiClient.Callback() {
+            @Override public void onStatus(String message) {
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) setStatus(message, CYAN);
+                });
+            }
+            @Override public void onSuccess(String answer) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    setAnswer("ТЕСТ GIGACHAT: " + answer);
+                    setStatus("GigaChat ответил. Проверяю озвучку…", GREEN);
+                    speech.speak(answer);
+                });
+            }
+            @Override public void onError(String message) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    setAnswer("ОШИБКА GIGACHAT: " + message);
+                    setStatus("Тест GigaChat не пройден", Color.rgb(251, 146, 60));
                 });
             }
         });
@@ -518,7 +567,9 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         form.addView(label("Высота голоса (1.0 — обычная)"));
         form.addView(pitch);
         form.addView(label("Изменения применяются к русской озвучке телевизора."));
-        new AlertDialog.Builder(this).setTitle("Настройки голоса").setView(form)
+        Button testVoice = button("Проверить русскую озвучку", false);
+        form.addView(testVoice);
+        AlertDialog voiceDialog = new AlertDialog.Builder(this).setTitle("Настройки голоса").setView(form)
                 .setPositiveButton("Сохранить", (d, w) -> {
                     try {
                         float newRate = Float.parseFloat(rate.getText().toString().replace(',', '.'));
@@ -535,7 +586,12 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                         setAnswer("Скорость должна быть от 0.65 до 1.4, высота — от 0.7 до 1.3.");
                     }
                 })
-                .setNegativeButton("Отмена", null).show();
+                .setNegativeButton("Отмена", null).create();
+        testVoice.setOnClickListener(v -> {
+            setStatus("Проверяю русскую озвучку…", CYAN);
+            speech.speak("Проверка русской озвучки. Если ты слышишь эту фразу, синтез речи работает.");
+        });
+        voiceDialog.show();
     }
 
     private void setStatus(String value, int color) {
@@ -737,7 +793,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 : speech.isModelReady() ? "готова"
                 : speech.isModelLoading() ? "загружается"
                 : "ошибка";
-        String ttsState = speech != null && speech.isTtsReady() ? "готова" : "ожидание";
+        String ttsState = speech == null ? "не запущена" : speech.getTtsShortState();
         diagnosticsText.setText("Vosk: " + modelState + " · Русская озвучка: " + ttsState
                 + " · ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен")
                 + " · Контекст: " + history.length() + "/12");
@@ -749,7 +805,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         out.append("Android API: ").append(Build.VERSION.SDK_INT).append('\n');
         out.append("Vosk Russian model: ").append(speech != null && speech.isModelReady() ? "ready" : speech != null && speech.isModelLoading() ? "loading" : "not ready").append('\n');
         out.append("Recognition: offline Vosk, 16 kHz mono PCM\n");
-        out.append("Audio source: VOICE_RECOGNITION -> RC In / MIBT.VoiceControl\n\n");
+        out.append("Audio source: VOICE_RECOGNITION -> RC In / MIBT.VoiceControl\n");
+        out.append("TTS diagnostics: ").append(speech == null ? "not initialized" : speech.getTtsDiagnostics()).append("\n\n");
         out.append("F5 bridge: requires the small HomeGuard patch in Aerial Korobovo.\n\n");
         out.append("Audio input devices:\n");
         AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);

@@ -132,3 +132,14 @@
 - Added `MainActivity.importBootstrapKey()`: on startup reads `getExternalFilesDir(null)/aerial_voice_bootstrap_key.txt`, imports via `SecretStore.save()` (AES-GCM / Android Keystore), then overwrites best-effort and deletes the temporary file. Import result is shown on the app status line.
 - Updated `tools/install-mic-test.ps1` with optional `-BootstrapKeyFile`: pushes a local one-time key file to `/sdcard/Android/data/app.orchard.tv.aerialvoice.mictest/files/aerial_voice_bootstrap_key.txt`, launches app, polls until file disappears. The normal APK/release ZIP contains no key.
 - For user convenience, prepare a one-time local PowerShell installer script containing the supplied Authorization Key, which creates a temporary local key file, calls the installer with `-BootstrapKeyFile`, removes the local temp file, and self-deletes after successful import. Do not commit that wrapper or key to GitHub.
+
+
+## 0.5.2 — diagnose GigaChat no-reply and TTS no-voice
+- User confirmed XiaoAI overlay is gone, RC In mic still works, and Vosk recognizes Russian. GigaChat did not answer even before XiaoAI was disabled, so do not attribute the AI failure to disabling XiaoAI or re-enable it.
+- Source review found MainActivity.onFinal should call AiClient.ask for non-local commands, and AiClient reports errors to the UI. SpeechEngine.speak previously returned silently when TTS was not ready; prior TV screenshot diagnostics showed "Русская озвучка: ожидание". This is a concrete separate TTS issue.
+- 0.5.2 adds a home-screen "Тест ИИ" button that calls AiClient.ask using the saved SecretStore key and the same chat endpoint path as voice requests, with visible progress and error details.
+- AiClient logs request stages and HTTP status only; never log Authorization Key or access token.
+- SpeechEngine now exposes TTS default engine, installed engine list, ru-RU setLanguage result, initialization state; speak() surfaces not-ready reason rather than silently returning; added TTS playback error logs and voice settings test button.
+- Diagnostics dialog includes TTS detail. VersionCode 8, versionName 0.5.2. Existing app data and stored Authorization Key should be preserved by in-place update using same GitHub Actions debug keystore.
+- Next: build and install 0.5.2; click "Тест ИИ" and "Проверить русскую озвучку". If AI test succeeds but voice dialogue doesn't, inspect onFinal/capture path; if AI test fails, exact error will show in answer panel. If AI succeeds but TTS test fails, use diagnostics engine list to select/install a Russian TTS engine.
+- XiaoAI remains disabled at user level; no system package changes in this update.

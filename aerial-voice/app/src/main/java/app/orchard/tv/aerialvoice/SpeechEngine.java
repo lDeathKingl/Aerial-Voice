@@ -51,6 +51,9 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
     private TextToSpeech tts;
     private volatile boolean ttsReady;
+    private volatile String ttsState = "инициализация";
+    private volatile String ttsEngineName = "не определён";
+    private volatile String ttsLanguageStatus = "не проверен";
     private volatile float speechRate = 1.0f;
     private volatile float speechPitch = 1.0f;
 
@@ -61,16 +64,26 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         try {
             tts = new TextToSpeech(this.context, this);
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override public void onStart(String id) { }
+                @Override public void onStart(String id) {
+                    Log.i(TAG, "TTS playback started: " + id);
+                }
                 @Override public void onDone(String id) {
+                    Log.i(TAG, "TTS playback completed: " + id);
                     if (!destroyed) main.post(() -> listener.onSpeechDone());
                 }
                 @Override public void onError(String id) {
-                    if (!destroyed) postStatus("Не удалось озвучить ответ.");
+                    Log.e(TAG, "TTS playback failed: " + id);
+                    if (!destroyed) postStatus("Не удалось озвучить ответ. " + getTtsDiagnostics());
+                }
+                @Override public void onError(String id, int errorCode) {
+                    Log.e(TAG, "TTS playback failed: " + id + ", code=" + errorCode);
+                    if (!destroyed) postStatus("Ошибка TTS (код " + errorCode + "). " + getTtsDiagnostics());
                 }
             });
         } catch (Exception e) {
             ttsReady = false;
+            ttsState = "ошибка запуска: " + safeMessage(e);
+            Log.e(TAG, "Could not initialize Android TTS", e);
             postTtsReady(false, "Не удалось запустить синтез речи: " + safeMessage(e));
         }
 
@@ -112,6 +125,34 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     public boolean isModelLoading() { return modelLoading; }
     public boolean isListening() { return listening; }
     public boolean isTtsReady() { return ttsReady; }
+    public String getTtsShortState() { return ttsReady ? "готова" : ttsState; }
+
+    public String getTtsDiagnostics() {
+        StringBuilder out = new StringBuilder();
+        out.append("ready=").append(ttsReady)
+                .append("; state=").append(ttsState)
+                .append("; engine=").append(ttsEngineName)
+                .append("; ru-RU=").append(ttsLanguageStatus);
+        if (tts != null) {
+            try {
+                java.util.List<TextToSpeech.EngineInfo> engines = tts.getEngines();
+                out.append("; engines=");
+                if (engines == null || engines.isEmpty()) {
+                    out.append("нет доступных TTS-движков");
+                } else {
+                    for (int i = 0; i < engines.size(); i++) {
+                        if (i > 0) out.append(", ");
+                        out.append(engines.get(i).name);
+                    }
+                }
+            } catch (Exception e) {
+                out.append("; engines_error=").append(e.getClass().getSimpleName());
+            }
+        } else {
+            out.append("; engine_instance=null");
+        }
+        return out.toString();
+    }
 
     public void setVoiceSettings(float rate, float pitch) {
         speechRate = Math.max(0.65f, Math.min(1.4f, rate));
@@ -349,7 +390,11 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     }
 
     public void speak(String text) {
-        if (tts == null || !ttsReady || text == null || text.trim().isEmpty()) return;
+        if (text == null || text.trim().isEmpty()) return;
+        if (tts == null || !ttsReady) {
+            postStatus("Ответ получен, но русская озвучка пока не готова. " + getTtsDiagnostics());
+            return;
+        }
         String spoken = text.replaceAll("(?s)\\x60\\x60\\x60.*?\\x60\\x60\\x60", "код")
                 .replaceAll("https?://\\S+", "ссылка")
                 .replaceAll("[*_#~]", "")
@@ -359,28 +404,50 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         int result = tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null,
                 "aerial-voice-answer-" + System.currentTimeMillis());
         if (result == TextToSpeech.ERROR) {
-            postStatus("Синтез речи не смог воспроизвести ответ.");
-            main.post(() -> { if (!destroyed) listener.onSpeechDone(); });
+            postStatus("Android TTS вернул ERROR при запуске озвучки. " + getTtsDiagnostics());
         }
     }
 
     @Override public void onInit(int status) {
         if (destroyed) return;
+        if (tts != null) {
+            try {
+                String engine = tts.getDefaultEngine();
+                if (engine != null && !engine.trim().isEmpty()) ttsEngineName = engine;
+            } catch (Exception ignored) { }
+        }
+        Log.i(TAG, "TTS init callback status=" + status + ", engine=" + ttsEngineName);
         if (status == TextToSpeech.SUCCESS && tts != null) {
             int language = tts.setLanguage(new Locale("ru", "RU"));
+            ttsLanguageStatus = languageDescription(language);
             ttsReady = language != TextToSpeech.LANG_MISSING_DATA
                     && language != TextToSpeech.LANG_NOT_SUPPORTED;
             if (ttsReady) {
                 tts.setSpeechRate(speechRate);
                 tts.setPitch(speechPitch);
+                ttsState = "готова";
+            } else if (language == TextToSpeech.LANG_MISSING_DATA) {
+                ttsState = "нет данных русского языка";
+            } else {
+                ttsState = "движок не поддерживает русский";
             }
             postTtsReady(ttsReady, ttsReady
-                    ? "Русская озвучка готова"
-                    : "В системе нет русского голоса TTS.");
+                    ? "Русская озвучка готова (" + ttsEngineName + ")"
+                    : "Русская озвучка недоступна: " + ttsState + ". " + getTtsDiagnostics());
         } else {
             ttsReady = false;
-            postTtsReady(false, "Не удалось инициализировать синтез речи.");
+            ttsState = "ошибка инициализации, код=" + status;
+            postTtsReady(false, "Не удалось инициализировать синтез речи. " + getTtsDiagnostics());
         }
+    }
+
+    private String languageDescription(int status) {
+        if (status == TextToSpeech.LANG_MISSING_DATA) return "LANG_MISSING_DATA";
+        if (status == TextToSpeech.LANG_NOT_SUPPORTED) return "LANG_NOT_SUPPORTED";
+        if (status == TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE) return "LANG_COUNTRY_VAR_AVAILABLE";
+        if (status == TextToSpeech.LANG_COUNTRY_AVAILABLE) return "LANG_COUNTRY_AVAILABLE";
+        if (status == TextToSpeech.LANG_AVAILABLE) return "LANG_AVAILABLE";
+        return "status=" + status;
     }
 
     public void destroy() {

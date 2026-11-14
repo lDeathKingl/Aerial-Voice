@@ -2,6 +2,7 @@ package app.orchard.tv.aerialvoice;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -18,9 +19,12 @@ import java.util.concurrent.Executors;
 
 /** GigaChat REST client. Authorization Key is stored only in the TV's Android Keystore-backed SecretStore. */
 public final class AiClient {
+    private static final String TAG = "AerialVoiceAI";
+
     public interface Callback {
         void onSuccess(String answer);
         void onError(String message);
+        default void onStatus(String message) { }
     }
 
     private static final String PREFS = "aerial_voice_settings";
@@ -60,20 +64,31 @@ public final class AiClient {
         Context app = context.getApplicationContext();
         IO.execute(() -> {
             try {
+                callback.onStatus("Проверяю сохранённый ключ GigaChat…");
                 String authKey = SecretStore.read(app);
-                if (authKey.isEmpty()) throw new IllegalStateException("GigaChat не настроен. Добавь Authorization Key в настройках Aerial Voice.");
+                if (authKey.isEmpty()) throw new IllegalStateException("В Aerial Voice не найден сохранённый Authorization Key GigaChat. Открой «Настройки ИИ» и сохрани ключ.");
                 String model = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                         .getString(MODEL_KEY, DEFAULT_MODEL).trim();
                 JSONArray messages = buildMessages(history);
+                Log.i(TAG, "AI request started. model=" + model + ", messages=" + messages.length());
+                callback.onStatus("Получаю токен GigaChat…");
                 String token = getAccessToken(authKey, false);
+                String answer;
                 try {
-                    callback.onSuccess(sendChat(token, model, messages));
+                    callback.onStatus("Отправляю вопрос в GigaChat…");
+                    answer = sendChat(token, model, messages);
                 } catch (ApiException e) {
                     if (e.httpCode != 401) throw e;
+                    Log.w(TAG, "Access token rejected; refreshing once.");
+                    callback.onStatus("Обновляю токен GigaChat…");
                     token = getAccessToken(authKey, true);
-                    callback.onSuccess(sendChat(token, model, messages));
+                    callback.onStatus("Повторно отправляю вопрос в GigaChat…");
+                    answer = sendChat(token, model, messages);
                 }
+                Log.i(TAG, "AI response received. characters=" + answer.length());
+                callback.onSuccess(answer);
             } catch (Exception e) {
+                Log.e(TAG, "AI request failed", e);
                 callback.onError(friendlyError(e));
             }
         });
@@ -95,6 +110,7 @@ public final class AiClient {
                         .put("content", "Проверь соединение. Ответь одним коротким словом: ГОТОВО."));
                 callback.onSuccess("GigaChat подключён. Модель: " + model + ". Ответ: " + sendChat(token, model, messages));
             } catch (Exception e) {
+                Log.e(TAG, "GigaChat connection test failed", e);
                 callback.onError(friendlyError(e));
             }
         });
@@ -142,6 +158,7 @@ public final class AiClient {
             }
 
             int code = connection.getResponseCode();
+            Log.i(TAG, "OAuth response HTTP " + code);
             String response = readAll(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
             if (code < 200 || code >= 300) {
                 throw apiError(code, response, "Не удалось получить OAuth-токен GigaChat");
@@ -187,8 +204,12 @@ public final class AiClient {
             }
 
             int code = connection.getResponseCode();
+            Log.i(TAG, "Chat completion response HTTP " + code + ", model=" + model.trim());
             String response = readAll(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
-            if (code < 200 || code >= 300) throw apiError(code, response, "Ошибка GigaChat API");
+            if (code < 200 || code >= 300) {
+                Log.w(TAG, "Chat API returned HTTP " + code + "; response body length=" + (response == null ? 0 : response.length()));
+                throw apiError(code, response, "Ошибка GigaChat API");
+            }
 
             JSONObject json = new JSONObject(response);
             JSONArray choices = json.optJSONArray("choices");
