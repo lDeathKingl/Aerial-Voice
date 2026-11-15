@@ -250,7 +250,9 @@ try {
   }
 
   Invoke-Adb -Arguments @("-s", $Tv, "shell", "am", "force-stop", $Package)
-  Invoke-Adb -Arguments @("-s", $Tv, "shell", "monkey", "-p", $Package, "1")
+  Write-Host "Starting Aerial Voice main activity explicitly..." -ForegroundColor Cyan
+  Invoke-Adb -Arguments @("-s", $Tv, "shell", "am", "start", "-W", "-n",
+    "$Package/app.orchard.tv.aerialvoice.MainActivity")
 
   if ($remoteKeyStaged) {
     $imported = $false
@@ -270,7 +272,12 @@ try {
       }
     }
     if (-not $imported) {
-      throw "The app did not confirm that the Authorization Key was saved."
+      # Never assume the key was not saved solely because the acknowledgement is missing.
+      $appState = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "pidof", $Package)
+      if ($appState.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace(($appState.Output -join ""))) {
+        throw "No key acknowledgement and the app is not running. Run check-gigachat-import.ps1 for diagnostics."
+      }
+      throw "No key acknowledgement. The app may have saved it; check the TV settings or run check-gigachat-import.ps1."
     }
     Write-Host "Authorization Key was verified and saved in Android Keystore." -ForegroundColor Green
   }
