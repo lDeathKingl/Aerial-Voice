@@ -70,6 +70,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private TextView diagnosticsText;
     private Button listenButton;
     private Button dialogueButton;
+    private Button asrButton;
     private Button autoStartButton;
     private boolean pendingRemoteStart;
     private boolean pendingRemoteStop;
@@ -104,6 +105,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         getWindow().setNavigationBarColor(BG);
         String selectedEngine = getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_engine", "");
         speech = new SpeechEngine(this, this, selectedEngine);
+        speech.setAsrEngine(getSharedPreferences(PREFS, MODE_PRIVATE).getString("asr_engine", AsrSelector.AUTO));
         speech.setTtsVoice(getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_voice", ""));
         String bootstrapStatus = importBootstrapKey();
         String historyStatus = importBootstrapHistory();
@@ -279,7 +281,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("AERIAL VOICE · 0.6.0", 13, MUTED, true);
+        TextView version = text("AERIAL VOICE · 0.6.3", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -298,7 +300,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
         LinearLayout hero = panel(this, PANEL, 22);
         TextView heroTitle = text("Слушаю тебя.", 30, TEXT, true);
-        TextView heroSub = text("Нажми кнопку ниже, затем удерживай кнопку микрофона пульта и говори.\nОтпусти кнопку — отправить фразу. Долгое удержание включает режим диалога.", 17, MUTED, false);
+        TextView heroSub = text("Удерживай микрофон пульта во время фразы и отпусти для отправки.\nДля проверки RC In используй тест ниже; GigaAM и Vosk работают офлайн.", 17, MUTED, false);
         heroSub.setPadding(0, dp(8), 0, dp(14));
         hero.addView(heroTitle);
         hero.addView(heroSub);
@@ -375,6 +377,11 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         LinearLayout.LayoutParams micTestLp = new LinearLayout.LayoutParams(-1, dp(50));
         micTestLp.bottomMargin = dp(12);
         content.addView(micTest, micTestLp);
+        asrButton = button("Распознавание: Авто (GigaAM → Vosk)", false);
+        asrButton.setOnClickListener(v -> showAsrSettings());
+        LinearLayout.LayoutParams asrLp = new LinearLayout.LayoutParams(-1, dp(50));
+        asrLp.bottomMargin = dp(12);
+        content.addView(asrButton, asrLp);
 
         LinearLayout chat = panel(this, PANEL_ALT, 18);
         TextView transcriptLabel = text("ТЫ СКАЗАЛ", 12, CYAN, true);
@@ -772,6 +779,43 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         speech.setVoiceSettings(prefs.getFloat("tts_rate", 1.0f), prefs.getFloat("tts_pitch", 1.0f));
     }
 
+    private void showAsrSettings() {
+        if (speech == null) return;
+        String[] names = {"Авто: GigaAM v3 → Vosk", "Только GigaAM v3", "Только Vosk"};
+        String[] choices = {AsrSelector.AUTO, AsrSelector.GIGAAM, AsrSelector.VOSK};
+        LinearLayout form = new LinearLayout(this);
+        form.setPadding(dp(18), dp(12), dp(18), dp(10));
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.addView(label("Движок распознавания русской речи"));
+        Spinner picker = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, names);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        picker.setAdapter(adapter);
+        String current = speech.getAsrEngine();
+        picker.setSelection(AsrSelector.GIGAAM.equals(current) ? 1
+                : AsrSelector.VOSK.equals(current) ? 2 : 0);
+        form.addView(picker);
+        TextView detail = text(speech.getAsrDiagnostics()
+                + "\n\nРежим «Авто» предпочитает GigaAM; при ошибке пробует Vosk."
+                + "\nРежимы «Только…» не переключаются автоматически.", 14, MUTED, false);
+        detail.setPadding(0, dp(12), 0, 0);
+        form.addView(detail);
+        new AlertDialog.Builder(this)
+                .setTitle("Офлайн-распознавание")
+                .setView(form)
+                .setPositiveButton("Сохранить", (d, w) -> {
+                    String next = choices[picker.getSelectedItemPosition()];
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putString("asr_engine", next).apply();
+                    speech.setAsrEngine(next);
+                    refreshDiagnostics();
+                    setStatus("Движок изменён. Выбор применяется к следующей записи.", GREEN);
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
     private void showVoiceSettings() {
         android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         LinearLayout form = new LinearLayout(this);
@@ -994,7 +1038,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         TextView devices = text("Доступные входы:\n" + RemoteMicTester.listInputDevices(this), 13, MUTED, false);
         devices.setPadding(0, 0, 0, dp(12));
         form.addView(devices);
-        TextView languages = text("Распознавание выполняет локальная русская модель Vosk. Google RecognitionService не используется.", 13, MUTED, false);
+        TextView languages = text("Распознавание выполняют локальные GigaAM v3 или Vosk. Тест микрофона не отправляет звук в интернет.", 13, MUTED, false);
         languages.setPadding(0, 0, 0, dp(12));
         form.addView(languages);
         TextView testStatus = text("Тест не запущен", 17, GREEN, true);
@@ -1055,12 +1099,16 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     private void refreshDiagnostics() {
         if (diagnosticsText == null) return;
-        String modelState = speech == null ? "не запущена"
-                : speech.isModelReady() ? "готова"
-                : speech.isModelLoading() ? "загружается"
-                : "ошибка";
         String ttsState = speech == null ? "не запущена" : speech.getTtsShortState();
-        diagnosticsText.setText("Vosk: " + modelState + " · Русская озвучка: " + ttsState
+        String giga = speech != null && speech.isGigaReady() ? "готов" : "нет модели";
+        String vosk = speech != null && speech.isVoskReady()
+                ? "готов" : speech != null && speech.isModelLoading() ? "загружается" : "не готов";
+        String asr = speech == null ? AsrSelector.AUTO : speech.getAsrEngine();
+        if (asrButton != null) asrButton.setText("Распознавание: "
+                + (AsrSelector.AUTO.equals(asr) ? "Авто (GigaAM → Vosk)"
+                : AsrSelector.GIGAAM.equals(asr) ? "GigaAM v3" : "Vosk"));
+        diagnosticsText.setText("GigaAM: " + giga + " · Vosk: " + vosk
+                + " · TTS: " + ttsState
                 + " · ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен")
                 + " · История: " + history.length() + "/" + MAX_HISTORY_MESSAGES
                 + " · Память: " + MemoryStore.count(this));
@@ -1070,8 +1118,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         StringBuilder out = new StringBuilder();
         out.append("AERIAL VOICE DIAGNOSTICS\n\n");
         out.append("Android API: ").append(Build.VERSION.SDK_INT).append('\n');
-        out.append("Vosk Russian model: ").append(speech != null && speech.isModelReady() ? "ready" : speech != null && speech.isModelLoading() ? "loading" : "not ready").append('\n');
-        out.append("Recognition: offline Vosk, 16 kHz mono PCM\n");
+        out.append("Recognition: offline GigaAM v3 E2E CTC INT8 / Vosk, 16 kHz mono PCM\n");
+        out.append(speech == null ? "Speech engine not initialized" : speech.getAsrDiagnostics()).append("\n\n");
         out.append("Audio source: VOICE_RECOGNITION -> RC In / MIBT.VoiceControl\n");
         out.append("TTS diagnostics: ").append(speech == null ? "not initialized" : speech.getTtsDiagnostics()).append("\n\n");
         out.append("F5 bridge: requires the small HomeGuard patch in Aerial Korobovo.\n\n");
