@@ -89,26 +89,56 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon :app:assembleGuardRelease
 
+      - name: Bundle Russian offline models on CI runner (not on TV)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/offline-models/vosk dist/offline-models/gigaam-v3
+          curl --fail --location --retry 4 --retry-delay 3 \
+            "https://huggingface.co/nocmt/GigaAM-v3-E2E-CTC-int8-ONNX/resolve/main/model.int8.onnx" \
+            -o dist/offline-models/gigaam-v3/model.int8.onnx
+          curl --fail --location --retry 4 --retry-delay 3 \
+            "https://huggingface.co/nocmt/GigaAM-v3-E2E-CTC-int8-ONNX/resolve/main/tokens.txt" \
+            -o dist/offline-models/gigaam-v3/tokens.txt
+          echo "784d77aaa7a0899a247e72c71d667792087ee4dec985db1f57961767a5f6014f  dist/offline-models/gigaam-v3/model.int8.onnx" | sha256sum -c -
+          echo "142de7570b3de5b3035ce111a89c228e80e6085273731d944093ddf24fa539cd  dist/offline-models/gigaam-v3/tokens.txt" | sha256sum -c -
+          curl --fail --location --retry 4 --retry-delay 3 \
+            "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" \
+            -o dist/offline-models/vosk/vosk-model-small-ru-0.22.zip
+          python3 - <<'PY'
+          import hashlib, json, zipfile
+          from pathlib import Path
+          root = Path('dist/offline-models')
+          with zipfile.ZipFile(root / 'vosk/vosk-model-small-ru-0.22.zip') as z:
+              names = set(z.namelist())
+              for f in ('am/final.mdl', 'conf/mfcc.conf', 'graph/Gr.fst'):
+                  assert f'vosk-model-small-ru-0.22/{f}' in names, f
+          data = {'format': 'AerialVoice-offline-model-cache-v1', 'files': []}
+          for f in sorted(root.rglob('*')):
+              if f.is_file() and f.name != 'manifest.json':
+                  data['files'].append({'path': f.relative_to(root).as_posix(), 'bytes': f.stat().st_size, 'sha256': hashlib.sha256(f.read_bytes()).hexdigest()})
+          (root / 'manifest.json').write_text(json.dumps(data, ensure_ascii=False, indent=2))
+          PY
+
       - name: Prepare combined release bundle
         run: |
           mkdir -p dist
           cp aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk dist/aerial-voice-full-debug.apk
           cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest06-debug.apk
           cp korobovo-upstream/app/build/outputs/apk/guard/release/*.apk dist/aerial-korobovo-voice-bridge.apk
-          cp tools/install-full-assistant.ps1 dist/
+          cp tools/install-full-assistant.ps1 tools/offline-install.ps1 tools/prepare-offline-models.ps1 dist/
           cp README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-0.6.1-stability.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
+          zip -r aerial-voice-0.6.2-offline.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk offline-models offline-install.ps1 prepare-offline-models.ps1 install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
 
       - name: Upload combined APKs and installer
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-0.6.1-stability
+          name: aerial-voice-0.6.2-offline
           path: |
             dist/aerial-voice-full-debug.apk
             dist/aerial-voice-mictest06-debug.apk
             dist/aerial-korobovo-voice-bridge.apk
-            dist/aerial-voice-0.6.1-stability.zip
+            dist/aerial-voice-0.6.2-offline.zip
             dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md
