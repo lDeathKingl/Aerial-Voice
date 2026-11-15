@@ -18,6 +18,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.util.Log;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
