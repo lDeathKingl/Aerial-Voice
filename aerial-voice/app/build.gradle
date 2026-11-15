@@ -16,15 +16,15 @@ android {
             dimension 'purpose'
             applicationIdSuffix '.mictest06'
             versionNameSuffix '-mictest06'
-            resValue 'string', 'app_name', 'Aerial Voice 0.6.3'
+            resValue 'string', 'app_name', 'Aerial Voice 0.6.4'
         }
     }
     defaultConfig {
         applicationId 'app.orchard.tv.aerialvoice'
         minSdk 26
         targetSdk 34
-        versionCode 12
-        versionName '0.6.3'
+        versionCode 13
+        versionName '0.6.4'
     }
 
     buildTypes {
