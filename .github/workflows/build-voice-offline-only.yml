@@ -44,6 +44,14 @@ jobs:
             }
             Write-Host "$scriptName syntax OK"
           }
+          $installerBytes = [System.IO.File]::ReadAllBytes((Resolve-Path 'tools/offline-install.ps1'))
+          if ($installerBytes.Where({ $_ -gt 127 }).Count -gt 0) {
+            throw 'offline-install.ps1 must be ASCII-only for Windows PowerShell 5.1 compatibility.'
+          }
+          $cmdBytes = [System.IO.File]::ReadAllBytes((Resolve-Path 'tools/INSTALL_OFFLINE.cmd'))
+          if ($cmdBytes.Where({ $_ -gt 127 }).Count -gt 0) {
+            throw 'INSTALL_OFFLINE.cmd must be ASCII-only for Windows cmd.exe compatibility.'
+          }
           if ($parseErrors.Count -gt 0) {
             $parseErrors | ForEach-Object { Write-Error $_.ToString() }
             exit 1
