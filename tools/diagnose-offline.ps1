@@ -19,6 +19,18 @@ foreach ($name in @($Package, "app.orchard.tv.aerialvoice.mictest", "app.orchard
   $report.Add($name + " -> " + ((@($dump | Select-String -Pattern 'versionName=|versionCode=' | Select-Object -First 2) | ForEach-Object { $_.ToString().Trim() }) -join "; "))
 }
 $report.Add("")
+$report.Add("INSTALLED RHVOICE PACKAGES:")
+$packages = @(& adb -s $Tv shell pm list packages 2>$null)
+$rhvoice = @($packages | Where-Object { $_ -match '(?i)rhvoice|rh.voice' })
+if ($rhvoice.Count -eq 0) {
+  $report.Add("RHVoice package not found by name. Check Android TTS settings manually.")
+} else {
+  foreach ($line in $rhvoice) { $report.Add($line.Trim()) }
+}
+$report.Add("TTS SERVICE STATUS:")
+$tts = @(& adb -s $Tv shell settings get secure tts_default_synth 2>$null)
+$report.Add("System default TTS: " + ($tts -join ""))
+$report.Add("")
 $report.Add("STORAGE:")
 $report.Add((@(& adb -s $Tv shell df -k /data 2>$null) | Select-Object -Last 2) -join [Environment]::NewLine)
 $report.Add("")
