@@ -24,6 +24,21 @@ jobs:
         uses: android-actions/setup-android@v4
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
+      - name: Validate Windows PowerShell installer syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'tools/offline-install.ps1'),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+          Write-Host 'offline-install.ps1 syntax OK'
       - name: Download GigaChat CA
         run: |
           mkdir -p aerial-voice/app/src/main/res/raw
