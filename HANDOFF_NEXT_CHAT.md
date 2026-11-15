@@ -175,3 +175,10 @@
 
 New branch `feature/stabilization-0.6.1` with `versionCode=10`. This is intended as an in-place update to the 0.6.0 `.mictest06` package using the same cached GitHub Actions signing key; leave old `.mictest` and Korobovo launcher untouched.
 GigaChat token cache is keyed by SHA-256 fingerprint and handles expires_at seconds/milliseconds. New JUnit tests run in CI. The F5 bridge sends an explicit continuous-mode change only on a long press, and MainActivity no longer delays starting capture 320 ms. These changes require validation with the Xiaomi remote when accessible.
+
+
+## Signing continuity verified (15 Nov 2026)
+- Aerial Voice 0.6.0 mictest06 APK cert SHA-256: 0d5923967b313cdf47c740bd00868cdf532d0113a26e28d02b397f350ee7fe78.
+- 0.6.1 build on full-assistant-0.6.0 branch (run 43699412690) despite v2 cache hit has cert SHA-256: 44ea8a3137e37814414eb908eb3a508d8024052da85329b87375241923ed58df.
+- Therefore do **not** claim 0.6.0 to 0.6.1 in-place signing compatibility. User has not yet installed 0.6.0; install 0.6.1 direct as new mictest06, leave old .mictest app/data intact. If 0.6.0 exists under .mictest06, don't uninstall it automatically.
+- CI now fails closed when signing key missing and checks APK cert SHA-256 against 0.6.1 baseline before publishing. A durable signing secret outside cache is advisable for future releases, but avoid exposing any private key.

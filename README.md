@@ -233,3 +233,7 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 - Short F5 presses preserve the enabled continuous-dialog mode; holding F5 for at least 650 ms enables it.
 - Added six JVM unit tests for OAuth cache behavior.
 - The existing Android package IDs and user data are preserved on in-place updates from 0.6.0 to 0.6.1; old 0.5.x package is still not uninstalled.
+
+
+### Важно о подписи 0.6.1
+Подпись APK версии 0.6.1 **не совпала** с первоначальным архивом 0.6.0 (это проверено по SHA-256 сертификата). Нельзя устанавливать 0.6.1 поверх уже установленной 0.6.0 под тем же ID без конфликта; старую 0.6.0 не удалять автоматически. Для пользователя, который ещё не установил 0.6.0, сразу устанавливать 0.6.1 рядом со старой 0.5.x. Начиная с 0.6.1 CI требует уже существующий signing keystore и проверяет ожидаемый сертификат; несовпадение блокирует публикацию.
