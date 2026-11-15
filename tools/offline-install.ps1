@@ -49,7 +49,68 @@ foreach ($relative in $expected) {
   $digest = (($remoteHash -join "") -split '\s+')[0].ToLowerInvariant()
   if ($digest -ne [string]$entry.sha256) { throw "TV SHA256 mismatch: $relative" }
 }
-Adb -ArgsList @("-s", $Tv, "shell", "am", "force-stop", $Package)
-Write-Host "Models staged and verified. Vosk will import on app launch." -ForegroundColor Green
-Write-Host "GigaAM is configured as primary recognizer; Vosk is the fallback."
-Adb -ArgsList @("-s", $Tv, "shell", "monkey", "-p", $Package, "1")
+# One-time GigaChat key bootstrap. The key is NEVER embedded in APK,
+# printed, added to command-line parameters or committed to GitHub.
+# The app imports it on launch, stores it in Android Keystore and deletes the file.
+$remoteKey = "/sdcard/Android/data/$Package/files/aerial_voice_bootstrap_key.txt"
+$remoteKeyStaged = $false
+Write-Host ""
+Write-Host "GigaChat: введите Authorization Key на компьютере." -ForegroundColor Cyan
+Write-Host "Если ключа пока нет, нажмите Enter: распознавание будет работать без него." -ForegroundColor Yellow
+$secureKey = Read-Host "Authorization Key (ввод скрыт)" -AsSecureString
+if ($null -ne $secureKey -and $secureKey.Length -gt 0) {
+  $keyPointer = [IntPtr]::Zero
+  $keyText = $null
+  $temporaryKeyFile = Join-Path ([IO.Path]::GetTempPath()) ("aerial-voice-bootstrap-" + [Guid]::NewGuid().ToString("N") + ".tmp")
+  try {
+    $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+    $keyText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer)
+    if ([string]::IsNullOrWhiteSpace($keyText)) { throw "Authorization Key is empty" }
+    if ([Text.Encoding]::UTF8.GetByteCount($keyText.Trim()) -gt 16384) { throw "Authorization Key is too long" }
+    # PowerShell 5.1's Set-Content -Encoding UTF8 adds a BOM. Use BOM-free UTF8.
+    [IO.File]::WriteAllText($temporaryKeyFile, $keyText.Trim(), [Text.UTF8Encoding]::new($false))
+    Adb -ArgsList @("-s", $Tv, "push", $temporaryKeyFile, $remoteKey)
+    $remoteKeyStaged = $true
+    Write-Host "Authorization Key передан; приложение зашифрует его при запуске." -ForegroundColor Cyan
+  }
+  finally {
+    if ($keyPointer -ne [IntPtr]::Zero) {
+      [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPointer)
+    }
+    $keyText = $null
+    $secureKey.Dispose()
+    if (Test-Path -LiteralPath $temporaryKeyFile) {
+      Remove-Item -LiteralPath $temporaryKeyFile -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+try {
+  Adb -ArgsList @("-s", $Tv, "shell", "am", "force-stop", $Package)
+  Write-Host "Models staged and verified. Vosk will import on app launch." -ForegroundColor Green
+  Write-Host "GigaAM is configured as primary recognizer; Vosk is the fallback."
+  Adb -ArgsList @("-s", $Tv, "shell", "monkey", "-p", $Package, "1")
+  if ($remoteKeyStaged) {
+    $imported = $false
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+      Start-Sleep -Milliseconds 700
+      # An exit code of 1 from test -e means the file was removed by the app.
+      & adb -s $Tv shell test -e $remoteKey 2>$null | Out-Null
+      if ($LASTEXITCODE -eq 1) { $imported = $true; break }
+      if ($LASTEXITCODE -ne 0) { throw "Не удалось проверить импорт Authorization Key через ADB." }
+    }
+    if (-not $imported) {
+      throw "Приложение не подтвердило импорт ключа. Временный файл будет удален; проверьте настройки GigaChat."
+    }
+    Write-Host "Authorization Key импортирован приложением и сохранен в Android Keystore." -ForegroundColor Green
+  }
+}
+finally {
+  if ($remoteKeyStaged) {
+    # Do not leave an unencrypted bootstrap file behind if startup/import failed.
+    & adb -s $Tv shell rm -f $remoteKey 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "Не удалось удалить временный файл ключа на ТВ. Повторно подключите ADB и удалите: $remoteKey"
+    }
+  }
+}
