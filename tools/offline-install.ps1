@@ -58,11 +58,21 @@ Adb -ArgsList @("-s", $Tv, "shell", "mkdir", "-p", "$remote/vosk", "$remote/giga
 foreach ($relative in $expected) {
   $local = Join-Path $Models ($relative.Replace('/', [IO.Path]::DirectorySeparatorChar))
   $dest = "$remote/$relative"
-  Adb -ArgsList @("-s", $Tv, "push", $local, $dest)
   $entry = @($manifest.files | Where-Object { $_.path -eq $relative }) | Select-Object -First 1
   $remoteHash = @(& adb -s $Tv shell sha256sum $dest 2>$null)
+  $digest = ""
+  if ($LASTEXITCODE -eq 0 -and ($remoteHash -join "") -match "^[0-9a-fA-F]{64}") {
+    $digest = (($remoteHash -join "") -split '\s+')[0].ToLowerInvariant()
+  }
+  if ($digest -eq [string]$entry.sha256) {
+    Write-Host "Модель уже установлена, пропускаю передачу: $relative" -ForegroundColor Green
+    continue
+  }
+  Write-Host "Передаю модель на ТВ: $relative" -ForegroundColor Cyan
+  Adb -ArgsList @("-s", $Tv, "push", $local, $dest)
+  $remoteHash = @(& adb -s $Tv shell sha256sum $dest 2>$null)
   if ($LASTEXITCODE -ne 0 -or ($remoteHash -join "") -notmatch "^[0-9a-fA-F]{64}") {
-    throw "TV has no sha256sum, or hash check failed for $relative. Models were transferred but not verified."
+    throw "Невозможно проверить SHA256 на ТВ для файла: $relative"
   }
   $digest = (($remoteHash -join "") -split '\s+')[0].ToLowerInvariant()
   if ($digest -ne [string]$entry.sha256) { throw "TV SHA256 mismatch: $relative" }
