@@ -30,11 +30,19 @@ jobs:
         run: |
           $tokens = $null
           $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'tools/offline-install.ps1'),
-            [ref]$tokens,
-            [ref]$parseErrors
-          ) | Out-Null
+          foreach ($scriptName in @('tools/offline-install.ps1','tools/prepare-offline-models.ps1','tools/diagnose-offline.ps1')) {
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $scriptName),
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.ToString() }
+              exit 1
+            }
+            Write-Host "$scriptName syntax OK"
+          }
           if ($parseErrors.Count -gt 0) {
             $parseErrors | ForEach-Object { Write-Error $_.ToString() }
             exit 1
@@ -97,15 +105,15 @@ jobs:
           set -euo pipefail
           cp aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk dist/aerial-voice-full-debug.apk
           cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest06-debug.apk
-          cp tools/offline-install.ps1 tools/prepare-offline-models.ps1 tools/INSTALL_OFFLINE.cmd dist/
+          cp tools/offline-install.ps1 tools/prepare-offline-models.ps1 tools/diagnose-offline.ps1 tools/INSTALL_OFFLINE.cmd dist/
           cp tools/README_OFFLINE_RU.md dist/README_OFFLINE_RU.md
           cd dist
-          zip -q -r -9 aerial-voice-0.6.2-offline-complete.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
+          zip -q -r -9 aerial-voice-0.6.3-offline-complete.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 diagnose-offline.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
           unzip -tq aerial-voice-0.6.2-offline-complete.zip
       - name: Upload complete offline ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-0.6.2-offline-complete
+          name: aerial-voice-0.6.3-offline-complete
           path: dist/aerial-voice-0.6.2-offline-complete.zip
           if-no-files-found: error
           retention-days: 30
