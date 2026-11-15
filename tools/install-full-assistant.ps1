@@ -79,7 +79,7 @@ if (-not $historyReady) {
     Write-Host "Старую историю автоматически прочитать не удалось. Старое приложение и его данные останутся на месте." -ForegroundColor Yellow
 }
 
-Write-Host "2/6 Устанавливаю Aerial Voice 0.6.0 рядом со старой версией..." -ForegroundColor Cyan
+Write-Host "2/6 Устанавливаю Aerial Voice 0.6.1 рядом со старой версией..." -ForegroundColor Cyan
 $r = Invoke-Adb @("install", "-r", $VoiceApk)
 Show-Output $r
 if ($r.ExitCode -ne 0) {
@@ -202,7 +202,7 @@ if (-not [string]::IsNullOrWhiteSpace($remoteHistoryFile)) {
         if ($check.ExitCode -ne 0) { $historyImported = $true; break }
     }
     if ($historyImported) {
-        Write-Host "История импортирована в Aerial Voice 0.6.0." -ForegroundColor Green
+        Write-Host "История импортирована в Aerial Voice 0.6.1." -ForegroundColor Green
     } else {
         Write-Warning "Временный файл истории ещё не удалён. Проверь экран «История» после запуска."
     }
@@ -213,7 +213,7 @@ $r = Invoke-Adb @("shell", "dumpsys", "package", $VoicePackage)
 $r.Output | Where-Object { $_ -match "versionName|versionCode" } | ForEach-Object { Write-Host $_ }
 
 Write-Host ""
-Write-Host "Aerial Voice 0.6.0 установлен рядом со старым приложением. Старые данные и старый GigaChat key не удалялись." -ForegroundColor Green
+Write-Host "Aerial Voice 0.6.1 установлен рядом со старым приложением. Старые данные и старый GigaChat key не удалялись." -ForegroundColor Green
 if ([string]::IsNullOrWhiteSpace($remoteBootstrapFile)) {
     Write-Warning "Новый пакет не получил Authorization Key. Добавь его в «Настройки GigaChat»; старый ключ остаётся в старом приложении."
 }

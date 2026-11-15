@@ -55,7 +55,7 @@ jobs:
 
       - name: Build full and micTest06 Aerial Voice APKs
         working-directory: aerial-voice
-        run: gradle --no-daemon clean :app:assembleFullDebug :app:assembleMicTestDebug
+        run: gradle --no-daemon clean :app:testMicTestDebugUnitTest :app:assembleFullDebug :app:assembleMicTestDebug
 
       - name: Get Aerial 1.95 and Korobovo weather patch
         run: |
@@ -92,17 +92,17 @@ jobs:
           cp tools/install-full-assistant.ps1 dist/
           cp README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-0.6.0-full-assistant.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
+          zip -r aerial-voice-0.6.1-stability.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
 
       - name: Upload combined APKs and installer
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-0.6.0-full-assistant
+          name: aerial-voice-0.6.1-stability
           path: |
             dist/aerial-voice-full-debug.apk
             dist/aerial-voice-mictest06-debug.apk
             dist/aerial-korobovo-voice-bridge.apk
-            dist/aerial-voice-0.6.0-full-assistant.zip
+            dist/aerial-voice-0.6.1-stability.zip
             dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md

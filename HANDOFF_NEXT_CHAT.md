@@ -169,3 +169,9 @@
 - `install-full-assistant.ps1` сначала пытается извлечь `conversation_history_json` из `shared_prefs/aerial_voice_settings.xml` старого debug-пакета через `adb run-as`, затем импортирует последние 30 сообщений в новый пакет через `aerial_voice_bootstrap_history.json`. `MainActivity.importBootstrapHistory()` сохраняет историю и удаляет временный файл.
 - Старый Authorization Key не может быть автоматически расшифрован новым пакетом: Android Keystore ключ `aerial_voice_api_key_v1` привязан к UID старого package ID. Старый `.mictest` остаётся установленным с ключом; новый installer предлагает безопасный скрытый ввод Authorization Key один раз (или принимает `-BootstrapKeyFile`). Не обещать автоматический перенос ключа.
 - Workflow создаёт `~/.android/debug.keystore` детерминированным шагом после cache restore и сохраняет его через отдельный cache key v2 даже если поздняя сборка Korobovo завершится ошибкой. Последующие обновления нового package ID `.mictest06` должны использовать тот же ключ; не удалять cache v2.
+
+
+## 0.6.1 stability
+
+New branch `feature/stabilization-0.6.1` with `versionCode=10`. This is intended as an in-place update to the 0.6.0 `.mictest06` package using the same cached GitHub Actions signing key; leave old `.mictest` and Korobovo launcher untouched.
+GigaChat token cache is keyed by SHA-256 fingerprint and handles expires_at seconds/milliseconds. New JUnit tests run in CI. The F5 bridge sends an explicit continuous-mode change only on a long press, and MainActivity no longer delays starting capture 320 ms. These changes require validation with the Xiaomi remote when accessible.

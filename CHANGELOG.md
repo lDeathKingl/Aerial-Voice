@@ -1,3 +1,10 @@
+## 0.6.1 — Stabilization
+
+- Fixed GigaChat token cache ownership by Authorization Key and supported both seconds/milliseconds OAuth expiry values.
+- Removed 320 ms F5 start scheduling delay and preserved continuous-dialog mode on short presses.
+- Added JUnit regression tests to GitHub Actions build.
+- Kept package IDs and existing app data unchanged on update.
+
 # Changelog
 
 ## 0.5.2 — GigaChat and TTS diagnostics

@@ -249,7 +249,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
             pendingRemoteStart = true;
             pendingRemoteStop = false;
             handler.removeCallbacks(pendingRemoteStartRunnable);
-            handler.postDelayed(pendingRemoteStartRunnable, 320L);
+            handler.post(pendingRemoteStartRunnable);
         }
         if (stop) {
             remotePttActive = false;
@@ -259,7 +259,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
             } else if (pendingRemoteStart) {
                 pendingRemoteStart = false;
                 pendingRemoteStop = false;
-                setStatus("Кнопка отпущена до готовности микрофона. Повтори нажатие после загрузки Vosk.", Color.rgb(251, 146, 60));
+                setStatus("Микрофон не успел начать запись. Повтори нажатие и удерживай кнопку чуть дольше.", Color.rgb(251, 146, 60));
             }
         }
     }

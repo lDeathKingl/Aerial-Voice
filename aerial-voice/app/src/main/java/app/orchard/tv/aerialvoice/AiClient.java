@@ -34,8 +34,7 @@ public final class AiClient {
     private static final String CHAT_URL = "https://api.giga.chat/v1/chat/completions";
     private static final String SCOPE = "GIGACHAT_API_PERS";
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
-    private static String cachedAccessToken = "";
-    private static long cachedTokenExpirySeconds = 0L;
+    private static final GigaChatTokenCache TOKEN_CACHE = new GigaChatTokenCache();
 
     private static final String SYSTEM_PROMPT =
             "Ты Aerial Voice — русскоязычный голосовой помощник телевизора Xiaomi. " +
@@ -155,9 +154,9 @@ public final class AiClient {
     /** OAuth access tokens expire after 30 minutes. Keep a small safety margin. */
     private static synchronized String getAccessToken(String authKey, boolean forceRefresh) throws Exception {
         long now = System.currentTimeMillis() / 1000L;
-        if (!forceRefresh && cachedAccessToken != null && !cachedAccessToken.isEmpty()
-                && cachedTokenExpirySeconds > now + 90L) {
-            return cachedAccessToken;
+        if (!forceRefresh) {
+            String cached = TOKEN_CACHE.get(authKey, now);
+            if (!cached.isEmpty()) return cached;
         }
 
         HttpURLConnection connection = null;
@@ -188,10 +187,8 @@ public final class AiClient {
             JSONObject json = new JSONObject(response);
             String token = json.optString("access_token", "").trim();
             if (token.isEmpty()) throw new IllegalStateException("GigaChat не вернул access_token.");
-            long expiry = json.optLong("expires_at", now + 1700L);
-            if (expiry <= now) expiry = now + 1700L;
-            cachedAccessToken = token;
-            cachedTokenExpirySeconds = expiry;
+            // API examples use both Unix seconds and milliseconds for expires_at.
+            TOKEN_CACHE.put(authKey, token, json.optLong("expires_at", 0L), now);
             return token;
         } catch (java.net.SocketTimeoutException e) {
             throw new IllegalStateException("Тайм-аут при авторизации GigaChat. Проверь интернет-соединение телевизора.", e);

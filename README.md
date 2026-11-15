@@ -223,3 +223,13 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 
 ### Установка полного комплекта
 Установщик сохраняет старое приложение и его данные. Если старая тестовая сборка доступна через `run-as`, он автоматически переносит историю разговоров. Authorization Key старого приложения не переносится автоматически: он зашифрован ключом Android Keystore, привязанным к UID старого пакета. Установщик безопасно попросит вставить Authorization Key один раз (можно нажать Enter и настроить позже). Старый пакет `.mictest` остаётся установленным с исходным ключом и историей. Новый ключ будет зашифрован в Android Keystore нового пакета.
+
+
+## Aerial Voice 0.6.1 — stabilisation patch
+
+- GigaChat OAuth cache is now bound to the selected Authorization Key fingerprint (the key itself is never logged or stored in the cache).
+- `expires_at` is normalized from Unix seconds or milliseconds before computing when to refresh GigaChat OAuth.
+- F5 voice capture starts on the next UI event-loop turn instead of waiting an additional 320 ms. Very short presses on a cold TV start still require live testing.
+- Short F5 presses preserve the enabled continuous-dialog mode; holding F5 for at least 650 ms enables it.
+- Added six JVM unit tests for OAuth cache behavior.
+- The existing Android package IDs and user data are preserved on in-place updates from 0.6.0 to 0.6.1; old 0.5.x package is still not uninstalled.

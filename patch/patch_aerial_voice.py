@@ -63,7 +63,7 @@ bridge = '''    // AERIAL_VOICE_BRIDGE_V2: this only runs when Aerial's own key-
                 handler.removeCallbacks(aerialVoiceF5LongPress)
                 aerialVoiceF5DownAt = SystemClock.uptimeMillis()
                 aerialVoiceF5LongTriggered = false
-                openAerialVoice(startListening = true, stopListening = false, continuous = false)
+                openAerialVoice(startListening = true, stopListening = false)
                 handler.postDelayed(aerialVoiceF5LongPress, 650L)
             }
             return true
@@ -72,14 +72,14 @@ bridge = '''    // AERIAL_VOICE_BRIDGE_V2: this only runs when Aerial's own key-
             handler.removeCallbacks(aerialVoiceF5LongPress)
             val wasLongPress = aerialVoiceF5LongTriggered
             aerialVoiceF5DownAt = 0L
-            openAerialVoice(startListening = false, stopListening = true, continuous = wasLongPress)
+            openAerialVoice(startListening = false, stopListening = true, continuous = if (wasLongPress) true else null)
             aerialVoiceF5LongTriggered = false
             return true
         }
         return true
     }
 
-    private fun openAerialVoice(startListening: Boolean, stopListening: Boolean, continuous: Boolean) {
+    private fun openAerialVoice(startListening: Boolean, stopListening: Boolean, continuous: Boolean? = null) {
         val candidates = listOf("app.orchard.tv.aerialvoice.mictest06", "app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.aerialvoice")
         val targetPackage = candidates.firstOrNull { pkg ->
             runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
@@ -94,8 +94,8 @@ bridge = '''    // AERIAL_VOICE_BRIDGE_V2: this only runs when Aerial's own key-
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra("app.orchard.tv.aerialvoice.START_LISTENING", startListening)
             .putExtra("app.orchard.tv.aerialvoice.STOP_LISTENING", stopListening)
-            .putExtra("app.orchard.tv.aerialvoice.SET_CONTINUOUS", true)
-            .putExtra("app.orchard.tv.aerialvoice.CONTINUOUS_MODE", continuous)
+            .putExtra("app.orchard.tv.aerialvoice.SET_CONTINUOUS", continuous != null)
+            .putExtra("app.orchard.tv.aerialvoice.CONTINUOUS_MODE", continuous == true)
             .putExtra("app.orchard.tv.aerialvoice.TRIGGER_SOURCE", "xiaomi_remote_f5")
         runCatching { startActivity(intent) }
             .onSuccess {
