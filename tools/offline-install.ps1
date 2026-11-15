@@ -35,6 +35,8 @@ foreach ($relative in $expected) {
 }
 Adb -ArgsList @("connect", $Tv)
 Write-Host "Подключение к $Tv" -ForegroundColor Cyan
+$beforeInstall = @(& adb -s $Tv shell pm path $Package 2>$null)
+$hadNewPackage = $LASTEXITCODE -eq 0 -and ($beforeInstall -join "") -match "package:"
 # Report available space where Android stores app models. Do not silently wipe anything.
 $dfResult = @(& adb -s $Tv shell df -k /data 2>$null)
 if ($LASTEXITCODE -eq 0 -and $dfResult.Count -gt 1) {
@@ -68,7 +70,7 @@ foreach ($relative in $expected) {
 # Best-effort transfer of plain conversation history from 0.5.2 (never its encrypted key).
 $remoteHistory = "/sdcard/Android/data/$Package/files/aerial_voice_bootstrap_history.json"
 $historyStaged = $false
-if (-not $SkipHistory) {
+if (-not $SkipHistory -and -not $hadNewPackage) {
   $legacyPackage = "app.orchard.tv.aerialvoice.mictest"
   $legacyInstalled = @(& adb -s $Tv shell pm path $legacyPackage 2>$null)
   if ($LASTEXITCODE -eq 0 -and ($legacyInstalled -join "") -match "package:") {
