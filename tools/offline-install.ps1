@@ -32,15 +32,15 @@ foreach ($relative in $expected) {
   if ($hash -ne [string]$entry.sha256) { throw "SHA256 mismatch: $relative" }
   Write-Host "OK: $relative" -ForegroundColor Green
 }
-Adb @("connect", $Tv)
+Adb -ArgsList @("connect", $Tv)
 # adb install -r preserves app data; on signing mismatch it fails without deleting anything.
-Adb @("-s", $Tv, "install", "-r", $Apk)
+Adb -ArgsList @("-s", $Tv, "install", "-r", $Apk)
 $remote = "/sdcard/Android/data/$Package/files/offline-models"
-Adb @("-s", $Tv, "shell", "mkdir", "-p", "$remote/vosk", "$remote/gigaam-v3")
+Adb -ArgsList @("-s", $Tv, "shell", "mkdir", "-p", "$remote/vosk", "$remote/gigaam-v3")
 foreach ($relative in $expected) {
   $local = Join-Path $Models ($relative.Replace('/', [IO.Path]::DirectorySeparatorChar))
   $dest = "$remote/$relative"
-  Adb @("-s", $Tv, "push", $local, $dest)
+  Adb -ArgsList @("-s", $Tv, "push", $local, $dest)
   $entry = @($manifest.files | Where-Object { $_.path -eq $relative }) | Select-Object -First 1
   $remoteHash = @(& adb -s $Tv shell sha256sum $dest 2>$null)
   if ($LASTEXITCODE -ne 0 -or ($remoteHash -join "") -notmatch "^[0-9a-fA-F]{64}") {
@@ -51,4 +51,4 @@ foreach ($relative in $expected) {
 }
 Write-Host "Models staged and verified. Vosk will import on app launch." -ForegroundColor Green
 Write-Warning "GigaAM files are staged, but runtime integration must be built before GigaAM can recognize speech."
-Adb @("-s", $Tv, "shell", "monkey", "-p", $Package, "1")
+Adb -ArgsList @("-s", $Tv, "shell", "monkey", "-p", $Package, "1")
