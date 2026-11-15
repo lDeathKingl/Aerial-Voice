@@ -1,6 +1,9 @@
 package app.orchard.tv.aerialvoice;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -66,6 +69,9 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private volatile String ttsEngineName = "не определён";
     private volatile String ttsLanguageStatus = "не проверен";
     private volatile String requestedTtsEngine = "";
+    private volatile String ttsPreference = "auto";
+    private volatile boolean autoRhVoiceSelected;
+    private volatile boolean ttsAutoFallbackDone;
     private volatile String requestedTtsVoice = "";
     private volatile float speechRate = 1.0f;
     private volatile float speechPitch = 1.0f;
@@ -78,7 +84,10 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         this.context = context.getApplicationContext();
         this.listener = listener;
         this.gigaAmEngine = new GigaAmEngine(this.context);
-        requestedTtsEngine = enginePackage == null ? "" : enginePackage.trim();
+        ttsPreference = enginePackage == null ? "auto" : enginePackage.trim();
+        if (ttsPreference.isEmpty()) ttsPreference = "system";
+        requestedTtsEngine = resolveTtsEngine(ttsPreference);
+        autoRhVoiceSelected = "auto".equals(ttsPreference) && !requestedTtsEngine.isEmpty();
         initializeTts();
 
         postStatus("Подготавливаю офлайн-распознавание Vosk…");
@@ -123,6 +132,41 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 }
             }
         });
+    }
+
+    /** Honors a manual TTS choice. For 'auto', prefer an installed RHVoice Android service. */
+    private String resolveTtsEngine(String preference) {
+        if ("system".equals(preference)) return "";
+        if (!"auto".equals(preference)) return preference;
+        try {
+            PackageManager pm = context.getPackageManager();
+            Intent query = new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE);
+            java.util.List<ResolveInfo> services = pm.queryIntentServices(query, 0);
+            for (ResolveInfo service : services) {
+                if (service == null || service.serviceInfo == null) continue;
+                String pkg = service.serviceInfo.packageName;
+                CharSequence label = service.loadLabel(pm);
+                if (TtsEngineChoice.isRhVoice(pkg, label == null ? "" : label.toString())) {
+                    Log.i(TAG, "Auto selected installed RHVoice: " + pkg);
+                    return pkg;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "RHVoice service detection unavailable", e);
+        }
+        return "";
+    }
+
+    private void restartTts() {
+        if (destroyed) return;
+        if (tts != null) {
+            try { tts.stop(); tts.shutdown(); } catch (Exception ignored) { }
+            tts = null;
+        }
+        ttsReady = false;
+        ttsState = "переключение движка";
+        ttsEngineName = requestedTtsEngine.isEmpty() ? "системный по умолчанию" : requestedTtsEngine;
+        initializeTts();
     }
 
     private void initializeTts() {
@@ -241,21 +285,17 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     }
 
     public String getRequestedTtsEngine() { return requestedTtsEngine; }
+    public String getTtsPreference() { return ttsPreference; }
 
     public void setTtsEngine(String packageName) {
-        String selected = packageName == null ? "" : packageName.trim();
-        if (selected.equals(requestedTtsEngine)) return;
-        requestedTtsEngine = selected;
-        main.post(() -> {
-            if (tts != null) {
-                try { tts.stop(); tts.shutdown(); } catch (Exception ignored) { }
-                tts = null;
-            }
-            ttsReady = false;
-            ttsState = "переключение движка";
-            ttsEngineName = selected.isEmpty() ? "системный по умолчанию" : selected;
-            initializeTts();
-        });
+        String selected = packageName == null ? "system" : packageName.trim();
+        if (selected.isEmpty()) selected = "system";
+        if (selected.equals(ttsPreference)) return;
+        ttsPreference = selected;
+        ttsAutoFallbackDone = false;
+        requestedTtsEngine = resolveTtsEngine(selected);
+        autoRhVoiceSelected = "auto".equals(selected) && !requestedTtsEngine.isEmpty();
+        main.post(this::restartTts);
     }
 
     public boolean isVoskReady() { return modelReady && model != null; }
@@ -682,6 +722,10 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             ttsLanguageStatus = languageDescription(language);
             ttsReady = language != TextToSpeech.LANG_MISSING_DATA
                     && language != TextToSpeech.LANG_NOT_SUPPORTED;
+            if (!ttsReady && autoRhVoiceSelected && !ttsAutoFallbackDone) {
+                fallBackFromRhVoice("RHVoice не предоставил русский голос");
+                return;
+            }
             if (ttsReady) {
                 tts.setSpeechRate(speechRate);
                 tts.setPitch(speechPitch);
@@ -696,10 +740,22 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                     ? "Русская озвучка готова (" + ttsEngineName + ")"
                     : "Русская озвучка недоступна: " + ttsState + ". " + getTtsDiagnostics());
         } else {
+            if (autoRhVoiceSelected && !ttsAutoFallbackDone) {
+                fallBackFromRhVoice("RHVoice не запустился, код=" + status);
+                return;
+            }
             ttsReady = false;
             ttsState = "ошибка инициализации, код=" + status;
             postTtsReady(false, "Не удалось инициализировать синтез речи. " + getTtsDiagnostics());
         }
+    }
+
+    private void fallBackFromRhVoice(String reason) {
+        ttsAutoFallbackDone = true;
+        autoRhVoiceSelected = false;
+        requestedTtsEngine = "";
+        postStatus(reason + ". Переключаюсь на системный TTS.");
+        main.post(this::restartTts);
     }
 
     private String languageDescription(int status) {
