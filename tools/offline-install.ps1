@@ -46,7 +46,7 @@ foreach ($relative in $expected) {
   if ($LASTEXITCODE -ne 0 -or ($remoteHash -join "") -notmatch "^[0-9a-fA-F]{64}") {
     throw "TV has no sha256sum, or hash check failed for $relative. Models were transferred but not verified."
   }
-  $digest = (($remoteHash -join "") -split "\\s+")[0].ToLowerInvariant()
+  $digest = (($remoteHash -join "") -split '\s+')[0].ToLowerInvariant()
   if ($digest -ne [string]$entry.sha256) { throw "TV SHA256 mismatch: $relative" }
 }
 Adb -ArgsList @("-s", $Tv, "shell", "am", "force-stop", $Package)
