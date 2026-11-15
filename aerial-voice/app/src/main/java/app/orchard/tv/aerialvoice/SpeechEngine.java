@@ -42,6 +42,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private volatile Model model;
+    private final GigaAmEngine gigaAmEngine;
     private volatile boolean modelReady;
     private volatile boolean modelLoading = true;
     private volatile boolean destroyed;
@@ -69,6 +70,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     public SpeechEngine(Context context, Listener listener, String enginePackage) {
         this.context = context.getApplicationContext();
         this.listener = listener;
+        this.gigaAmEngine = new GigaAmEngine(this.context);
         requestedTtsEngine = enginePackage == null ? "" : enginePackage.trim();
         initializeTts();
 
@@ -90,7 +92,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                         model = loaded;
                         modelReady = true;
                         modelLoading = false;
-                        postStatus("Русское офлайн-распознавание Vosk готово.");
+                        postStatus(gigaAmEngine.isInstalled() ? "GigaAM v3 (основной) и Vosk (резервный) готовы." : "Русское офлайн-распознавание Vosk готово; модель GigaAM не установлена.");
                     } catch (Exception e) {
                         modelLoading = false;
                         postError("Не удалось загрузить модель Vosk: " + safeMessage(e));
@@ -337,6 +339,10 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         String failure = null;
         StringBuilder completed = new StringBuilder();
         boolean routeConfirmed = false;
+        // Buffer up to 35 seconds of audio for offline GigaAM inference.
+        final short[] gigaPcm = gigaAmEngine.isInstalled() ? new short[SAMPLE_RATE * 35] : null;
+        int gigaCount = 0;
+        boolean gigaOverflow = false;
         boolean voiceDetected = false;
         boolean noSpeechTimeout = false;
         long captureStartedAt = android.os.SystemClock.elapsedRealtime();
@@ -413,6 +419,15 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             while (!stopRequested) {
                 int count = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
                 if (count > 0) {
+                    if (gigaPcm != null && !gigaOverflow) {
+                        if (gigaCount + count <= gigaPcm.length) {
+                            System.arraycopy(samples, 0, gigaPcm, gigaCount, count);
+                            gigaCount += count;
+                        } else {
+                            gigaOverflow = true;
+                            Log.w(TAG, "GigaAM audio limit reached; Vosk fallback will be used");
+                        }
+                    }
                     if (handsFreeSession) {
                         long nowElapsed = android.os.SystemClock.elapsedRealtime();
                         long rms = rms(samples, count);
@@ -458,6 +473,21 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             if (deliverResult && routeConfirmed) {
                 String tail = readJsonText(recognizer.getFinalResult(), "text");
                 appendText(completed, tail);
+                if (gigaPcm != null && !gigaOverflow && gigaCount > 0) {
+                    try {
+                        postStatus("Распознаю фразу через GigaAM v3…");
+                        String improved = gigaAmEngine.transcribe(gigaPcm, gigaCount);
+                        if (!improved.isEmpty()) {
+                            completed.setLength(0);
+                            completed.append(improved);
+                        } else {
+                            Log.w(TAG, "GigaAM returned empty result; using Vosk");
+                        }
+                    } catch (Throwable gigaError) {
+                        Log.e(TAG, "GigaAM inference failed; using Vosk", gigaError);
+                        postStatus("GigaAM недоступен, использую Vosk.");
+                    }
+                }
             }
         } catch (Exception e) {
             if (!stopRequested || deliverResult) failure = safeMessage(e);
@@ -621,6 +651,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
     private synchronized void closeModelIfIdle() {
         if (listening) return;
+        gigaAmEngine.close();
         Model current = model;
         model = null;
         modelReady = false;
