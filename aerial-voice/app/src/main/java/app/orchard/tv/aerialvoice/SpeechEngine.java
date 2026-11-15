@@ -101,7 +101,11 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                         postStatus(gigaAmEngine.isInstalled() ? "GigaAM v3 (основной) и Vosk (резервный) готовы." : "Русское офлайн-распознавание Vosk готово; модель GigaAM не установлена.");
                     } catch (Exception e) {
                         modelLoading = false;
-                        postError("Не удалось загрузить модель Vosk: " + safeMessage(e));
+                        if (isGigaReady() && !AsrSelector.VOSK.equals(selectedAsr)) {
+                            postStatus("GigaAM v3 доступен. Резервный Vosk не загрузился: " + safeMessage(e));
+                        } else {
+                            postError("Не удалось загрузить модель Vosk: " + safeMessage(e));
+                        }
                     }
                 }, "AerialVoice-Vosk-Load");
                 loader.start();
@@ -109,7 +113,13 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
 
             @Override public void onError(String message) {
                 modelLoading = false;
-                if (!destroyed) postError(message);
+                if (!destroyed) {
+                    if (isGigaReady() && !AsrSelector.VOSK.equals(selectedAsr)) {
+                        postStatus("GigaAM v3 готов. Резервный Vosk недоступен: " + message);
+                    } else {
+                        postError(message);
+                    }
+                }
             }
         });
     }
