@@ -11,12 +11,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-/** Downloads and installs the Russian Vosk model into app-private storage. */
+/** Installs Russian Vosk from a model package transferred by ADB, without network. */
 public final class VoskModelManager {
     public interface Listener {
         void onProgress(String message);
@@ -59,21 +57,20 @@ public final class VoskModelManager {
             throw new IOException("На внутреннем хранилище телевизора нужно не менее 140 МБ свободного места.");
         }
 
-        File archive = new File(root, MODEL_NAME + ".zip");
-        File partial = new File(root, MODEL_NAME + ".zip.part");
+        // The installer transfers the verified archive into this application's
+        // external files directory before launch. Never download on the TV.
+        File external = context.getExternalFilesDir(null);
+        if (external == null) {
+            throw new IOException("Внешняя папка приложения недоступна. Установи модель через ADB.");
+        }
+        File staged = new File(new File(external, "offline-models/vosk"), MODEL_NAME + ".zip");
+        if (!staged.isFile() || staged.length() < 10L * 1024L * 1024L) {
+            throw new IOException("Офлайн-модель Vosk отсутствует. Запусти установщик offline-install.ps1 с компьютера.");
+        }
+        File archive = staged;
         File temporary = new File(root, MODEL_NAME + ".extracting");
-        deleteRecursively(partial);
         deleteRecursively(temporary);
-
-        notifyProgress(listener, "Подключаюсь к серверу русской модели Vosk…");
-        download(MODEL_URL, partial, listener);
-        if (archive.exists() && !archive.delete()) {
-            throw new IOException("Не удалось заменить старый архив модели.");
-        }
-        if (!partial.renameTo(archive)) {
-            throw new IOException("Не удалось сохранить загруженный архив модели.");
-        }
-
+        notifyProgress(listener, "Устанавливаю модель Vosk из локального комплекта…");
         notifyProgress(listener, "Распаковываю русскую модель Vosk…");
         if (!temporary.mkdirs() && !temporary.isDirectory()) {
             throw new IOException("Не удалось создать папку для распаковки модели.");
@@ -90,71 +87,13 @@ public final class VoskModelManager {
             throw new IOException("Не удалось установить распакованную модель.");
         }
         deleteRecursively(temporary);
-        deleteRecursively(archive);
+        // Keep the staged archive for reinstalling without network access.
 
         if (!isModelValid(modelDirectory)) {
             throw new IOException("Проверка установленной модели не пройдена.");
         }
         notifyProgress(listener, "Русская модель Vosk установлена.");
         return modelDirectory;
-    }
-
-    private static void download(String address, File destination, Listener listener) throws Exception {
-        HttpURLConnection connection = null;
-        try {
-            connection = (HttpURLConnection) new URL(address).openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(20000);
-            connection.setReadTimeout(30000);
-            connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.3.1");
-            Log.i(TAG, "Connecting to model server: " + address);
-            int response = connection.getResponseCode();
-            Log.i(TAG, "Model server HTTP " + response);
-            if (response != HttpURLConnection.HTTP_OK) {
-                throw new IOException("Сервер модели вернул HTTP " + response + ".");
-            }
-
-            long total = connection.getContentLengthLong();
-            Log.i(TAG, "Model archive content length: " + total + " bytes");
-            notifyProgress(listener, total > 0
-                    ? "Соединение установлено. Архив: " + (total / (1024L * 1024L)) + " МБ. Начинаю загрузку…"
-                    : "Соединение установлено. Размер архива не указан. Начинаю загрузку…");
-            long downloaded = 0L;
-            long lastReportedBytes = 0L;
-            int lastPercent = -1;
-            try (InputStream input = new BufferedInputStream(connection.getInputStream());
-                 BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(destination))) {
-                byte[] buffer = new byte[64 * 1024];
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    output.write(buffer, 0, count);
-                    downloaded += count;
-                    if (total > 0) {
-                        int percent = (int) Math.min(100, downloaded * 100L / total);
-                        if (downloaded - lastReportedBytes >= 1024L * 1024L || percent == 100) {
-                            lastPercent = percent;
-                            lastReportedBytes = downloaded;
-                            notifyProgress(listener, "Скачиваю русскую модель Vosk: " + percent + "% ("
-                                    + (downloaded / (1024L * 1024L)) + " из "
-                                    + Math.max(1L, total / (1024L * 1024L)) + " МБ)");
-                        }
-                    } else if (downloaded - lastReportedBytes >= 1024L * 1024L) {
-                        lastReportedBytes = downloaded;
-                        notifyProgress(listener, "Скачано " + (downloaded / (1024L * 1024L)) + " МБ модели Vosk…");
-                    }
-                }
-                output.flush();
-            }
-            Log.i(TAG, "Model archive downloaded: " + destination.length() + " bytes");
-            if (destination.length() < 10L * 1024L * 1024L) {
-                throw new IOException("Загруженный архив слишком маленький или повреждён.");
-            }
-        } catch (java.net.SocketTimeoutException e) {
-            throw new IOException("Истекло время ожидания ответа сервера модели. Проверь интернет на телевизоре и доступ к alphacephei.com.", e);
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
     }
 
     private static void unzipSafely(File archive, File destination) throws IOException {
