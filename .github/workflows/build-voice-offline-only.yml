@@ -81,10 +81,10 @@ jobs:
           set -euo pipefail
           cp aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk dist/aerial-voice-full-debug.apk
           cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest06-debug.apk
-          cp tools/offline-install.ps1 tools/prepare-offline-models.ps1 dist/
+          cp tools/offline-install.ps1 tools/prepare-offline-models.ps1 tools/INSTALL_OFFLINE.cmd dist/
           cp tools/README_OFFLINE_RU.md dist/README_OFFLINE_RU.md
           cd dist
-          zip -q -r -9 aerial-voice-0.6.2-offline-complete.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 README_OFFLINE_RU.md
+          zip -q -r -9 aerial-voice-0.6.2-offline-complete.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
           unzip -tq aerial-voice-0.6.2-offline-complete.zip
       - name: Upload complete offline ZIP
         uses: actions/upload-artifact@v4
