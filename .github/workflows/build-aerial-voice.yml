@@ -60,10 +60,14 @@ jobs:
       - name: Verify signing certificate against the 0.6.1 release
         run: |
           set -euo pipefail
-          # Pin the APK signing config to the same keystore restored by Actions.
-          # First verify it matches the keystore. A fixed public fingerprint can be pinned after this CI run.
-          EXPECTED="$(keytool -exportcert -rfc -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          echo "Cached Android signing certificate SHA-256: $EXPECTED"
+          # Public fingerprint pinned to the first verified stableDebug release.
+          EXPECTED="734817b1e327db7ac64cdece612746913b37faf29aa2c57e7a9c017d43b78558"
+          CACHED="$(keytool -exportcert -rfc -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [ "$CACHED" != "$EXPECTED" ]; then
+            echo "::error::Unexpected signing keystore. Expected $EXPECTED, got $CACHED. Refusing release."
+            exit 1
+          fi
+          echo "Stable signing keystore certificate verified: $EXPECTED"
           SIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
           for apk in aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk; do
             ACTUAL="$("$SIGNER" verify --print-certs "$apk" | grep 'certificate SHA-256 digest:' | head -n 1 | awk '{print $NF}' | tr '[:upper:]' '[:lower:]')"
@@ -73,6 +77,19 @@ jobs:
             fi
           done
           echo "Both Aerial Voice variants use expected 0.6.1 signing certificate."
+
+      - name: Verify Aerial Voice APK package names and version
+        run: |
+          set -euo pipefail
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          MIC="$("$AAPT" dump badging aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk | grep '^package:' | head -n1)"
+          FULL="$("$AAPT" dump badging aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk | grep '^package:' | head -n1)"
+          echo "$MIC"
+          echo "$FULL"
+          [[ "$MIC" == *"name='app.orchard.tv.aerialvoice.mictest06'"* ]]
+          [[ "$FULL" == *"name='app.orchard.tv.aerialvoice'"* ]]
+          [[ "$MIC" == *"versionCode='10'"* ]]
+          [[ "$FULL" == *"versionCode='10'"* ]]
 
       - name: Get Aerial 1.95 and Korobovo weather patch
         run: |
@@ -100,16 +117,25 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon :app:assembleGuardRelease
 
+      - name: Verify patched Korobovo package name
+        run: |
+          set -euo pipefail
+          APK="$(find korobovo-upstream/app/build/outputs/apk/guard/release -maxdepth 1 -name '*.apk' | head -n1)"
+          test -n "$APK"
+          PACKAGE="$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep '^package:' | head -n1)"
+          echo "$PACKAGE"
+          [[ "$PACKAGE" == *"name='app.orchard.tv.korobovo'"* ]]
+
       - name: Prepare combined release bundle
         run: |
           mkdir -p dist
           cp aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk dist/aerial-voice-full-debug.apk
           cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest06-debug.apk
           cp korobovo-upstream/app/build/outputs/apk/guard/release/*.apk dist/aerial-korobovo-voice-bridge.apk
-          cp tools/install-full-assistant.ps1 dist/
+          cp tools/install-full-assistant.ps1 tools/install-and-check.bat tools/diagnose-full-assistant.ps1 dist/
           cp README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-0.6.1-stability.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
+          zip -r aerial-voice-0.6.1-stability.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 install-and-check.bat diagnose-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
 
       - name: Upload combined APKs and installer
         uses: actions/upload-artifact@v4
@@ -120,6 +146,9 @@ jobs:
             dist/aerial-voice-mictest06-debug.apk
             dist/aerial-korobovo-voice-bridge.apk
             dist/aerial-voice-0.6.1-stability.zip
+            dist/install-full-assistant.ps1
+            dist/install-and-check.bat
+            dist/diagnose-full-assistant.ps1
             dist/README.md
             dist/HANDOFF_NEXT_CHAT.md
             dist/CHANGELOG.md

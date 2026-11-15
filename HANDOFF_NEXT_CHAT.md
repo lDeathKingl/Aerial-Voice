@@ -182,3 +182,11 @@ GigaChat token cache is keyed by SHA-256 fingerprint and handles expires_at seco
 - 0.6.1 build on full-assistant-0.6.0 branch (run 43699412690) despite v2 cache hit has cert SHA-256: 44ea8a3137e37814414eb908eb3a508d8024052da85329b87375241923ed58df.
 - Therefore do **not** claim 0.6.0 to 0.6.1 in-place signing compatibility. User has not yet installed 0.6.0; install 0.6.1 direct as new mictest06, leave old .mictest app/data intact. If 0.6.0 exists under .mictest06, don't uninstall it automatically.
 - CI now fails closed when signing key missing and checks APK cert SHA-256 against 0.6.1 baseline before publishing. A durable signing secret outside cache is advisable for future releases, but avoid exposing any private key.
+
+
+## 0.6.1 final build verification and Windows UX
+
+- CI explicitly signs both APK variants with $HOME/.android/debug.keystore (stableDebug Gradle config), not the random Android SDK default; pinned certificate SHA-256 = 734817b1e327db7ac64cdece612746913b37faf29aa2c57e7a9c017d43b78558. Workflow fails if the cache/keystore or APK differs.
+- 0.6.0 mictest06 APK certificate 0d5923967b313cdf47c740bd00868cdf532d0113a26e28d02b397f350ee7fe78, so 0.6.0 cannot be updated in place to 0.6.1. User has not installed 0.6.0; install 0.6.1 side-by-side with 0.5.x.
+- Combined ZIP includes install-and-check.bat and diagnose-full-assistant.ps1 (optional -WithLogs). Batch launcher uses process-scoped execution-policy bypass to make installation one-click and does not uninstall apps.
+- CI also checks both package IDs (.aerialvoice and .aerialvoice.mictest06) and versionCode 10 using aapt.
