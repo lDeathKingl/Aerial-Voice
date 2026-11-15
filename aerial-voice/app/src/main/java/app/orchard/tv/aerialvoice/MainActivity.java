@@ -1102,7 +1102,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         String ttsState = speech == null ? "не запущена" : speech.getTtsShortState();
         String giga = speech != null && speech.isGigaReady() ? "готов" : "нет модели";
         String vosk = speech != null && speech.isVoskReady()
-                ? "готов" : speech != null && speech.isModelLoading() ? "загружается" : "не готов";
+                ? "готов" : speech != null && speech.isVoskLoading() ? "загружается" : "не готов";
         String asr = speech == null ? AsrSelector.AUTO : speech.getAsrEngine();
         if (asrButton != null) asrButton.setText("Распознавание: "
                 + (AsrSelector.AUTO.equals(asr) ? "Авто (GigaAM → Vosk)"
