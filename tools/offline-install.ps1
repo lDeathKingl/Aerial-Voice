@@ -49,6 +49,7 @@ foreach ($relative in $expected) {
   $digest = (($remoteHash -join "") -split "\\s+")[0].ToLowerInvariant()
   if ($digest -ne [string]$entry.sha256) { throw "TV SHA256 mismatch: $relative" }
 }
+Adb -ArgsList @("-s", $Tv, "shell", "am", "force-stop", $Package)
 Write-Host "Models staged and verified. Vosk will import on app launch." -ForegroundColor Green
-Write-Warning "GigaAM files are staged, but runtime integration must be built before GigaAM can recognize speech."
+Write-Host "GigaAM is configured as primary recognizer; Vosk is the fallback."
 Adb -ArgsList @("-s", $Tv, "shell", "monkey", "-p", $Package, "1")
