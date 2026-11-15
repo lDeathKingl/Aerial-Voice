@@ -190,3 +190,14 @@ GigaChat token cache is keyed by SHA-256 fingerprint and handles expires_at seco
 - 0.6.0 mictest06 APK certificate 0d5923967b313cdf47c740bd00868cdf532d0113a26e28d02b397f350ee7fe78, so 0.6.0 cannot be updated in place to 0.6.1. User has not installed 0.6.0; install 0.6.1 side-by-side with 0.5.x.
 - Combined ZIP includes install-and-check.bat and diagnose-full-assistant.ps1 (optional -WithLogs). Batch launcher uses process-scoped execution-policy bypass to make installation one-click and does not uninstall apps.
 - CI also checks both package IDs (.aerialvoice and .aerialvoice.mictest06) and versionCode 10 using aapt.
+
+
+## 0.7.0 dual-offline-model bundle
+
+- Branch `feature/offline-gigaam-v3-0.7.0`, source base is verified signed 0.6.1 branch. VersionCode=11, package still `app.orchard.tv.aerialvoice.mictest06`.
+- GigaAM v3 e2e RNNT INT8 model from `csukuangfj/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16` (four ONNX/tokens files, ~232 MB). sherpa-onnx-2.0.1.aar SHA256 a8d09d1d32f3eb8520482c6d3d43fae674681c5b050385967c70a3c2c9bf0ee7.
+- Kotlin wrapper `GigaAmV3Engine` with offline-only sherpa inference (16kHz/64 mel/nemo_transducer/greedy_search). SpeechEngine collects PCM and runs GigaAM after each remote-mic phrase; Vosk supplies live partials and fallback.
+- VoskModelManager is now OFFLINE ONLY; no HTTP downloads in Android code. Models installed into `<externalFilesDir>/models/gigaam-v3/` and `<externalFilesDir>/models/vosk-model-small-ru-0.22/`.
+- GitHub Action downloads both models and AAR, verifies known SHA256s, creates manifest. The final ZIP MUST contain `models/SHA256SUMS.txt`, Vosk zip and GigaAM files; without them Windows installer refuses to install.
+- `tools/install-offline-models.ps1` checks SHA256 and ADB-pushes all files before launching the new app.
+- Device performance, actual JNI model initialization, and RC In inference latency are not validated until Xiaomi TV testing. Do not claim they are tested merely because CI passes.

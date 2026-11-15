@@ -1,3 +1,13 @@
+## 0.7.0 — Полный офлайн-комплект Vosk + GigaAM v3
+
+- GigaAM v3 E2E RNNT INT8, sherpa-onnx Android 2.0.1, CPU-инференс после фразы; 16 kHz / featureDim 64.
+- Vosk Small остаётся для промежуточного текста и автоматического резервного распознавания.
+- Добавлен пользовательский выбор движка в интерфейсе.
+- Удалены сетевые загрузки модели Vosk на телевизоре: используются офлайн-модели из app-specific files.
+- GitHub Actions скачивает модели на сборщике, проверяет SHA и складывает их в единый ZIP с APK.
+- Установщик проверяет все модели и передаёт их по ADB без VPN/интернета на TV.
+- Нет удаления старого приложения, истории или ключа GigaChat; сохранили подпись пакета.
+
 ## 0.6.1 — Stabilization
 
 - Fixed GigaChat token cache ownership by Authorization Key and supported both seconds/milliseconds OAuth expiry values.

@@ -53,11 +53,21 @@ jobs:
             exit 1
           fi
 
+      - name: Download verified sherpa-onnx Android runtime
+        run: |
+          set -euo pipefail
+          mkdir -p aerial-voice/app/libs
+          curl --fail --location --retry 5 --retry-all-errors --max-time 900 \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar" \
+            -o aerial-voice/app/libs/sherpa-onnx.aar
+          echo "a8d09d1d32f3eb8520482c6d3d43fae674681c5b050385967c70a3c2c9bf0ee7  aerial-voice/app/libs/sherpa-onnx.aar" | sha256sum -c -
+          unzip -l aerial-voice/app/libs/sherpa-onnx.aar | grep -F 'classes.jar'
+
       - name: Build full and micTest06 Aerial Voice APKs
         working-directory: aerial-voice
         run: gradle --no-daemon clean :app:testMicTestDebugUnitTest :app:assembleFullDebug :app:assembleMicTestDebug
 
-      - name: Verify signing certificate against the 0.6.1 release
+      - name: Verify signing certificate against the stable release
         run: |
           set -euo pipefail
           # Public fingerprint pinned to the first verified stableDebug release.
@@ -76,7 +86,7 @@ jobs:
               exit 1
             fi
           done
-          echo "Both Aerial Voice variants use expected 0.6.1 signing certificate."
+          echo "Both Aerial Voice variants use expected 0.7.0 signing certificate."
 
       - name: Verify Aerial Voice APK package names and version
         run: |
@@ -88,8 +98,8 @@ jobs:
           echo "$FULL"
           [[ "$MIC" == *"name='app.orchard.tv.aerialvoice.mictest06'"* ]]
           [[ "$FULL" == *"name='app.orchard.tv.aerialvoice'"* ]]
-          [[ "$MIC" == *"versionCode='10'"* ]]
-          [[ "$FULL" == *"versionCode='10'"* ]]
+          [[ "$MIC" == *"versionCode='11'"* ]]
+          [[ "$FULL" == *"versionCode='11'"* ]]
 
       - name: Get Aerial 1.95 and Korobovo weather patch
         run: |
@@ -126,27 +136,32 @@ jobs:
           echo "$PACKAGE"
           [[ "$PACKAGE" == *"name='app.orchard.tv.korobovo'"* ]]
 
+      - name: Download both Russian offline models on the CI runner
+        run: |
+          bash tools/prepare-offline-models.sh dist/models
+
       - name: Prepare combined release bundle
         run: |
           mkdir -p dist
           cp aerial-voice/app/build/outputs/apk/full/debug/app-full-debug.apk dist/aerial-voice-full-debug.apk
           cp aerial-voice/app/build/outputs/apk/micTest/debug/app-micTest-debug.apk dist/aerial-voice-mictest06-debug.apk
           cp korobovo-upstream/app/build/outputs/apk/guard/release/*.apk dist/aerial-korobovo-voice-bridge.apk
-          cp tools/install-full-assistant.ps1 tools/install-and-check.bat tools/diagnose-full-assistant.ps1 dist/
+          cp tools/install-full-assistant.ps1 tools/install-offline-models.ps1 tools/install-and-check.bat tools/diagnose-full-assistant.ps1 dist/
           cp README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md dist/
           cd dist
-          zip -r aerial-voice-0.6.1-stability.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 install-and-check.bat diagnose-full-assistant.ps1 README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
+          zip -r aerial-voice-0.7.0-offline-gigaam-vosk.zip aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk aerial-korobovo-voice-bridge.apk install-full-assistant.ps1 install-offline-models.ps1 install-and-check.bat diagnose-full-assistant.ps1 models README.md HANDOFF_NEXT_CHAT.md CHANGELOG.md
 
       - name: Upload combined APKs and installer
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-0.6.1-stability
+          name: aerial-voice-0.7.0-offline-gigaam-vosk
           path: |
             dist/aerial-voice-full-debug.apk
             dist/aerial-voice-mictest06-debug.apk
             dist/aerial-korobovo-voice-bridge.apk
-            dist/aerial-voice-0.6.1-stability.zip
+            dist/aerial-voice-0.7.0-offline-gigaam-vosk.zip
             dist/install-full-assistant.ps1
+            dist/install-offline-models.ps1
             dist/install-and-check.bat
             dist/diagnose-full-assistant.ps1
             dist/README.md

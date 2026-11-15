@@ -246,3 +246,29 @@ Workflow собирает APK с Gradle 8.9, JDK 17 и Android SDK 34. Для п
 - Для журналов запуска: `powershell -NoProfile -ExecutionPolicy Bypass -File .\\diagnose-full-assistant.ps1 -WithLogs`. Проверь журнал перед пересылкой — в нём могут быть приватные голосовые фразы и имена приложений.
 - Сертификат голосового APK закреплён в CI по SHA-256: `734817b1e327db7ac64cdece612746913b37faf29aa2c57e7a9c017d43b78558`. При смене ключа или пакета публикация сборки блокируется.
 - При установке 0.6.1 поверх уже установленной 0.6.1 данные сохранятся, если сертификат совпадает. Если на ТВ стоит 0.6.0 под `.mictest06`, его подпись отличается, и установщик безопасно остановится без удаления.
+
+
+## Aerial Voice 0.7.0 — обе модели устанавливаются ОФЛАЙН
+
+**Главное:** никаких скачиваний Vosk или GigaAM v3 на Xiaomi TV. Один ZIP содержит Android APK, оригинальный архив Vosk Small Russian 0.22, GigaAM v3 E2E RNN-T INT8 (4 файла ONNX/tokenizer), sherpa-onnx runtime внутри APK, PowerShell-установщик и SHA-256 manifest. Все модели скачиваются и проверяются **на сервере сборки GitHub Actions** при подготовке ZIP. После скачивания готового ZIP установка и распознавание на ТВ работают без VPN, ПК и интернет-подключения. GigaChat — отдельный внешний облачный сервис и для его ответов интернет всё равно нужен.
+
+### Порядок установки
+1. Скачай полный файл `aerial-voice-0.7.0-offline-gigaam-vosk.zip` из GitHub Actions, распакуй целиком на компьютер Windows.
+2. Компьютер должен видеть TV через ADB `192.168.2.89:5555`. Открой `install-and-check.bat` двойным щелчком; **не запускай APK отдельно**.
+3. Установщик проверяет SHA-256 каждого файла, устанавливает APK, **передаёт обе модели по ADB** в `/sdcard/Android/data/app.orchard.tv.aerialvoice.mictest06/files/models`, затем запускает Aerial Voice. Загрузка моделей из интернета на ТВ отключена.
+4. В Aerial Voice есть кнопка `Распознавание: GigaAM v3 / Vosk · офлайн`. По умолчанию используется GigaAM v3, Vosk показывает промежуточную расшифровку и остаётся резервным движком.
+5. GigaAM v3 производит финальное распознавание после отпускания кнопки микрофона. Время ответа зависит от производительности CPU/ОЗУ телевизора, пока не измерено.
+6. Если GigaAM недоступна, не смогла распознать фразу или завершилась с ошибкой, в разговор отправляется результат Vosk. Исходные настройки GigaChat и TTS не меняются.
+
+### Технически
+- RNNT модель: `csukuangfj/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16` (encoder.int8.onnx + decoder.onnx + joiner.onnx + tokens.txt), примерно 232 MB. 16 kHz mono PCM / 64 mel features / greedy search / modelType `nemo_transducer`. Локальный inference через `sherpa-onnx-2.0.1.aar` и JNI для ARM Android. CPU threads=2.
+- Vosk model: `vosk-model-small-ru-0.22.zip` (архив ~45 MB), распаковка на компьютере, потом передача ADB.
+- Крупные модели намеренно **не зашиты в APK**, а находятся в том же офлайн-архиве с автоматической установкой. APK содержит движки; модели устанавливаются как app-specific files. Это уменьшает риск повреждения APK и облегчает проверку больших файлов.
+- GitHub Actions проверяет SHA-256 модели/движка, затем формирует `models/SHA256SUMS.txt`. PowerShell подтверждает контрольные суммы перед передачей на ТВ.
+- Никаких ключей GigaChat внутри ZIP/AAR/моделей нет. Установщик переносит ключ с компьютера обычным bootstrap механизмом при необходимости, старые приложения не удаляет.
+- Важно: при повторной установке **не очищай данные приложения**. Модели останутся на ТВ, а ключи/история сохраняются.
+
+### Откуда модели и лицензии
+- [GigaAM v3](https://github.com/salute-developers/GigaAM) — MIT; [совместимый экспорт для sherpa-onnx](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16).
+- [sherpa-onnx Android](https://github.com/k2-fsa/sherpa-onnx/releases/tag/v2.0.1) — Apache 2.0.
+- [Vosk Small Russian](https://alphacephei.com/vosk/models) — бесплатная локальная русская модель.

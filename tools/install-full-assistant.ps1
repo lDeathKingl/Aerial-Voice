@@ -44,6 +44,11 @@ if ([string]::IsNullOrWhiteSpace($KorobovoApk)) {
 if (-not (Test-Path -LiteralPath $VoiceApk)) {
     throw "Не найден APK Aerial Voice: $VoiceApk"
 }
+$OfflineModels = Join-Path $PSScriptRoot "models"
+$OfflineInstaller = Join-Path $PSScriptRoot "install-offline-models.ps1"
+if (-not (Test-Path -LiteralPath $OfflineInstaller) -or -not (Test-Path -LiteralPath (Join-Path $OfflineModels "SHA256SUMS.txt"))) {
+    throw "Офлайн-модели не найдены в архиве. Не устанавливай урезанную сборку — распакуй полный ZIP с GigaAM v3 и Vosk."
+}
 
 Write-Host "1/6 Подключаюсь к Xiaomi TV: $Tv" -ForegroundColor Cyan
 $r = Invoke-Adb @("connect", $Tv)
@@ -79,7 +84,7 @@ if (-not $historyReady) {
     Write-Host "Старую историю автоматически прочитать не удалось. Старое приложение и его данные останутся на месте." -ForegroundColor Yellow
 }
 
-Write-Host "2/6 Устанавливаю Aerial Voice 0.6.1 рядом со старой версией..." -ForegroundColor Cyan
+Write-Host "2/6 Устанавливаю Aerial Voice 0.7.0 рядом со старой версией..." -ForegroundColor Cyan
 $r = Invoke-Adb @("install", "-r", $VoiceApk)
 Show-Output $r
 if ($r.ExitCode -ne 0) {
@@ -88,6 +93,10 @@ if ($r.ExitCode -ne 0) {
     }
     throw "Aerial Voice не установился. Старое приложение и его данные не удалялись."
 }
+
+Write-Host "Офлайн-установка GigaAM v3 и Vosk. Модели передаются с компьютера; сеть ТВ не используется." -ForegroundColor Cyan
+& $OfflineInstaller -Tv $Tv -Package $VoicePackage -ModelRoot $OfflineModels
+if ($LASTEXITCODE -ne 0) { throw "Ошибка передачи офлайн-моделей." }
 
 $remoteDir = "/sdcard/Android/data/$VoicePackage/files"
 $remoteBootstrapFile = ""
@@ -202,7 +211,7 @@ if (-not [string]::IsNullOrWhiteSpace($remoteHistoryFile)) {
         if ($check.ExitCode -ne 0) { $historyImported = $true; break }
     }
     if ($historyImported) {
-        Write-Host "История импортирована в Aerial Voice 0.6.1." -ForegroundColor Green
+        Write-Host "История импортирована в Aerial Voice 0.7.0." -ForegroundColor Green
     } else {
         Write-Warning "Временный файл истории ещё не удалён. Проверь экран «История» после запуска."
     }
@@ -213,7 +222,7 @@ $r = Invoke-Adb @("shell", "dumpsys", "package", $VoicePackage)
 $r.Output | Where-Object { $_ -match "versionName|versionCode" } | ForEach-Object { Write-Host $_ }
 
 Write-Host ""
-Write-Host "Aerial Voice 0.6.1 установлен рядом со старым приложением. Старые данные и старый GigaChat key не удалялись." -ForegroundColor Green
+Write-Host "Aerial Voice 0.7.0 установлен рядом со старым приложением. Старые данные и старый GigaChat key не удалялись." -ForegroundColor Green
 if ([string]::IsNullOrWhiteSpace($remoteBootstrapFile)) {
     Write-Warning "Новый пакет не получил Authorization Key. Добавь его в «Настройки GigaChat»; старый ключ остаётся в старом приложении."
 }
@@ -224,3 +233,5 @@ if ($bridgeInstalled) {
 }
 Write-Host "В приложении включи «Диалог» и при желании «Автозапуск»." -ForegroundColor Cyan
 Write-Host "Не удаляй старый Aerial Korobovo и не отключай его защиту мыши/геймпада." -ForegroundColor Yellow
+
+Write-Host "Русские модели GigaAM v3 и Vosk установлены без обращения ТВ к серверу." -ForegroundColor Green

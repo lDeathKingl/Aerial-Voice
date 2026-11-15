@@ -51,6 +51,10 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private volatile boolean handsFreeCapture;
     private volatile AudioRecord activeRecord;
     private Thread captureThread;
+    private volatile String activeAsrEngine = "gigaam_v3";
+    private static final String ASR_PREFS = "aerial_voice_settings";
+    private static final String ASR_KEY = "asr_engine";
+    private static final int GIGA_MAX_SAMPLES = 16000 * 25;
 
     private TextToSpeech tts;
     private volatile boolean ttsReady;
@@ -71,8 +75,9 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         this.listener = listener;
         requestedTtsEngine = enginePackage == null ? "" : enginePackage.trim();
         initializeTts();
-
-        postStatus("Подготавливаю офлайн-распознавание Vosk…");
+        activeAsrEngine = this.context.getSharedPreferences(ASR_PREFS, Context.MODE_PRIVATE)
+                .getString(ASR_KEY, "gigaam_v3");
+        postStatus("Подготавливаю офлайн-распознавание Vosk и GigaAM v3…");
         VoskModelManager.prepare(this.context, new VoskModelManager.Listener() {
             @Override public void onProgress(String message) {
                 if (!destroyed) postStatus(message);
@@ -240,6 +245,18 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     }
 
     public boolean isModelReady() { return modelReady; }
+    public boolean isGigaAmReady() { return GigaAmV3Engine.isInstalled(context); }
+
+    public String getAsrEngine() { return activeAsrEngine; }
+
+    public void setAsrEngine(String engine) {
+        if (!"vosk".equals(engine) && !"gigaam_v3".equals(engine)) return;
+        activeAsrEngine = engine;
+        context.getSharedPreferences(ASR_PREFS, Context.MODE_PRIVATE).edit()
+                .putString(ASR_KEY, engine).apply();
+        postStatus("Движок распознавания: " + ("gigaam_v3".equals(engine) ? "GigaAM v3" : "Vosk")
+                + (isGigaAmReady() ? " · обе модели установлены" : " · GigaAM пока не установлена"));
+    }
     public boolean isModelLoading() { return modelLoading; }
     public boolean isListening() { return listening; }
     public boolean isTtsReady() { return ttsReady; }
@@ -299,8 +316,8 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         if (destroyed || listening) return;
         if (!modelReady || model == null) {
             postError(modelLoading
-                    ? "Русская модель Vosk ещё загружается. Подожди окончания загрузки."
-                    : "Русская модель Vosk не готова. Проверь интернет и свободное место на телевизоре.");
+                    ? "Русская модель Vosk ещё загружается. Подожди завершения подготовки."
+                    : "Модель Vosk недоступна. Переустанови офлайн-комплект с компьютера.");
             return;
         }
 
@@ -339,6 +356,9 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         boolean routeConfirmed = false;
         boolean voiceDetected = false;
         boolean noSpeechTimeout = false;
+        final boolean useGiga = "gigaam_v3".equals(activeAsrEngine) && GigaAmV3Engine.isInstalled(context);
+        final short[] gigaAudio = useGiga ? new short[GIGA_MAX_SAMPLES] : null;
+        int gigaAudioCount = 0;
         long captureStartedAt = android.os.SystemClock.elapsedRealtime();
         long lastVoiceAt = captureStartedAt;
         final boolean handsFreeSession = handsFreeCapture;
@@ -429,6 +449,11 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                             break;
                         }
                     }
+                    if (useGiga && gigaAudioCount < GIGA_MAX_SAMPLES) {
+                        int available = Math.min(count, GIGA_MAX_SAMPLES - gigaAudioCount);
+                        System.arraycopy(samples, 0, gigaAudio, gigaAudioCount, available);
+                        gigaAudioCount += available;
+                    }
                     if (recognizer.acceptWaveForm(samples, count)) {
                         String segment = readJsonText(recognizer.getResult(), "text");
                         appendText(completed, segment);
@@ -474,8 +499,29 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 try { recognizer.close(); } catch (Exception ignored) { }
             }
 
+            String bestResult = completed.toString().trim();
+            final int availableSamples = gigaAudioCount;
+            if (useGiga && deliverResult && !noSpeechTimeout && availableSamples >= 1600
+                    && !destroyed && routeConfirmed) {
+                postStatus("GigaAM v3 распознаёт фразу офлайн…");
+                long startMs = android.os.SystemClock.elapsedRealtime();
+                try {
+                    String gigaText = GigaAmV3Engine.transcribe(context, gigaAudio, availableSamples);
+                    if (!gigaText.isEmpty()) {
+                        bestResult = gigaText;
+                        Log.i(TAG, "GigaAM v3 succeeded in "
+                                + (android.os.SystemClock.elapsedRealtime() - startMs) + " ms");
+                    } else {
+                        postStatus("GigaAM v3 не распознала фразу. Использую результат Vosk.");
+                    }
+                } catch (Exception | LinkageError e) {
+                    Log.e(TAG, "GigaAM v3 failed, preserving Vosk result", e);
+                    postStatus("GigaAM v3 недоступна: " + safeMessage(e)
+                            + ". Переключился на Vosk для этой фразы.");
+                }
+            }
             listening = false;
-            final String result = completed.toString().trim();
+            final String result = bestResult;
             final String error = failure;
             final boolean timedOut = noSpeechTimeout;
             final boolean shouldNotify = !destroyed && (deliverResult || timedOut);
@@ -617,6 +663,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             tts = null;
         }
         if (!listening) closeModelIfIdle();
+        new Thread(GigaAmV3Engine::release, "AerialVoice-GigaAM-Release").start();
     }
 
     private synchronized void closeModelIfIdle() {
@@ -645,7 +692,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         main.post(() -> { if (!destroyed) listener.onTtsReady(ready, message); });
     }
 
-    private String safeMessage(Exception e) {
+    private String safeMessage(Throwable e) {
         return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     }
 }

@@ -377,6 +377,12 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         addWeighted(modeActions, contextButton);
         content.addView(modeActions);
 
+        Button asrButton = button("Распознавание: GigaAM v3 / Vosk · офлайн", false);
+        asrButton.setOnClickListener(v -> showAsrSettings());
+        LinearLayout.LayoutParams asrLp = new LinearLayout.LayoutParams(-1, dp(50));
+        asrLp.bottomMargin = dp(12);
+        content.addView(asrButton, asrLp);
+
         Button micTest = button("Проверить микрофон пульта · RC In", false);
         micTest.setOnClickListener(v -> showRemoteMicTest());
         LinearLayout.LayoutParams micTestLp = new LinearLayout.LayoutParams(-1, dp(50));
@@ -1069,6 +1075,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         String ttsState = speech == null ? "не запущена" : speech.getTtsShortState();
         diagnosticsText.setText("Vosk: " + modelState + " · Русская озвучка: " + ttsState
                 + " · ИИ: " + (AiClient.isConfigured(this) ? "настроен" : "не настроен")
+                + " · ASR: " + ("gigaam_v3".equals(speech.getAsrEngine()) ? "GigaAM v3" : "Vosk")
+                + (speech.isGigaAmReady() ? " ✓" : " (нет модели)")
                 + " · История: " + history.length() + "/" + MAX_HISTORY_MESSAGES
                 + " · Память: " + MemoryStore.count(this));
     }
@@ -1270,6 +1278,38 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         new AlertDialog.Builder(this).setTitle("Контекст телевизора")
                 .setView(form).setPositiveButton("Обновить", (d, w) -> showTvContext())
                 .setNegativeButton("Закрыть", null).show();
+    }
+
+    private void showAsrSettings() {
+        if (speech == null) return;
+        boolean gigaInstalled = speech.isGigaAmReady();
+        boolean voskInstalled = speech.isModelReady();
+        String selected = speech.getAsrEngine();
+        String details = "Обе модели устанавливаются одним ZIP с компьютера. "
+                + "Телевизору для распознавания интернет не требуется.\n\n"
+                + "GigaAM v3: " + (gigaInstalled ? "установлена" : "не установлена") + "\n"
+                + "Vosk: " + (voskInstalled ? "готов" : "не готов") + "\n\n"
+                + "GigaAM выполняет окончательное распознавание после завершения записи; "
+                + "Vosk показывает промежуточный текст и служит резервом, если GigaAM не ответит. "
+                + "На слабом процессоре Xiaomi ответ может появляться медленнее.";
+        new AlertDialog.Builder(this)
+                .setTitle("Офлайн-распознавание речи")
+                .setMessage(details)
+                .setSingleChoiceItems(new String[]{
+                        "GigaAM v3 (русский, основной)",
+                        "Vosk Small (быстрый, резервный)"
+                }, "vosk".equals(selected) ? 1 : 0, (dialog, which) -> {
+                    if (which == 0 && !gigaInstalled) {
+                        setStatus("GigaAM v3 отсутствует. Установи офлайн-комплект с компьютера.", Color.rgb(251, 146, 60));
+                        dialog.dismiss();
+                        return;
+                    }
+                    speech.setAsrEngine(which == 0 ? "gigaam_v3" : "vosk");
+                    dialog.dismiss();
+                    refreshDiagnostics();
+                })
+                .setNegativeButton("Закрыть", null)
+                .show();
     }
 
     private void showTvControls() {
