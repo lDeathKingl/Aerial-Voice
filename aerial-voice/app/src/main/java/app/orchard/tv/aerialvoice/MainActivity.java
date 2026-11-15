@@ -279,7 +279,14 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("AERIAL VOICE · 0.6.0", 13, MUTED, true);
+        String displayedVersion = "0.6.1";
+        try {
+            String packageVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            if (packageVersion != null && !packageVersion.isEmpty()) {
+                displayedVersion = packageVersion.split("-")[0];
+            }
+        } catch (Exception ignored) { }
+        TextView version = text("AERIAL VOICE · " + displayedVersion, 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));

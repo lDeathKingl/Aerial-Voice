@@ -107,7 +107,7 @@ public final class VoskModelManager {
             connection.setConnectTimeout(20000);
             connection.setReadTimeout(30000);
             connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.3.1");
+            connection.setRequestProperty("User-Agent", "AerialVoice-AndroidTV/0.6.1");
             Log.i(TAG, "Connecting to model server: " + address);
             int response = connection.getResponseCode();
             Log.i(TAG, "Model server HTTP " + response);
