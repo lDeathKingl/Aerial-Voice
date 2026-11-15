@@ -34,12 +34,23 @@ foreach ($relative in $expected) {
   Write-Host "OK: $relative" -ForegroundColor Green
 }
 Adb -ArgsList @("connect", $Tv)
-Write-Host "Подключение: $Tv" -ForegroundColor Cyan
-# Best-effort check of free app-data storage. Do not depend on vendor-specific df output.
-$df = @(& adb -s $Tv shell df -k /data 2>$null)
-if ($LASTEXITCODE -eq 0 -and $df.Count -gt 1) {
-  $parts = (($df | Select-Object -Last 1).Trim() -split '\s+')
-  if ($parts.Count -ge 4 -and $parts[3] -match '^\d+
+Write-Host "Подключение к $Tv" -ForegroundColor Cyan
+# Report available space where Android stores app models. Do not silently wipe anything.
+$dfResult = @(& adb -s $Tv shell df -k /data 2>$null)
+if ($LASTEXITCODE -eq 0 -and $dfResult.Count -gt 1) {
+  $parts = (($dfResult | Select-Object -Last 1).Trim() -split '\s+')
+  if ($parts.Count -ge 4 -and $parts[3] -match '^[0-9]+$') {
+    $freeKiB = [long]$parts[3]
+    Write-Host ("Свободно в /data: {0} МБ" -f [math]::Floor($freeKiB / 1024))
+    if ($freeKiB -lt (400 * 1024)) { throw "Нужно освободить на ТВ не менее 400 МБ памяти." }
+  }
+}
+# adb install -r retains app data and fails safely on a signing mismatch.
+Adb -ArgsList @("-s", $Tv, "install", "-r", $Apk)
+& adb -s $Tv shell pm grant $Package android.permission.RECORD_AUDIO 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Warning "Проверь разрешение микрофона на ТВ." }
+& adb -s $Tv shell appops set $Package GET_USAGE_STATS allow 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Warning "Доступ к контексту приложений можно выдать вручную." }
 $remote = "/sdcard/Android/data/$Package/files/offline-models"
 Adb -ArgsList @("-s", $Tv, "shell", "mkdir", "-p", "$remote/vosk", "$remote/gigaam-v3")
 foreach ($relative in $expected) {
@@ -54,37 +65,34 @@ foreach ($relative in $expected) {
   $digest = (($remoteHash -join "") -split '\s+')[0].ToLowerInvariant()
   if ($digest -ne [string]$entry.sha256) { throw "TV SHA256 mismatch: $relative" }
 }
-# Optional history transfer from the old 0.5.2 debug package.
-# Do not read or attempt to extract the old encrypted Authorization Key.
+# Best-effort transfer of plain conversation history from 0.5.2 (never its encrypted key).
 $remoteHistory = "/sdcard/Android/data/$Package/files/aerial_voice_bootstrap_history.json"
 $historyStaged = $false
 if (-not $SkipHistory) {
-  $oldPackage = "app.orchard.tv.aerialvoice.mictest"
-  $oldApk = @(& adb -s $Tv shell pm path $oldPackage 2>$null)
-  if ($LASTEXITCODE -eq 0 -and ($oldApk -join '') -match 'package:') {
+  $legacyPackage = "app.orchard.tv.aerialvoice.mictest"
+  $legacyInstalled = @(& adb -s $Tv shell pm path $legacyPackage 2>$null)
+  if ($LASTEXITCODE -eq 0 -and ($legacyInstalled -join "") -match "package:") {
     try {
-      $oldXmlText = @(& adb -s $Tv exec-out run-as $oldPackage cat shared_prefs/aerial_voice_settings.xml 2>$null) -join [Environment]::NewLine
-      if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($oldXmlText)) {
-        throw "Старая сборка не разрешает чтение истории через run-as."
-      }
-      [xml]$oldXml = $oldXmlText
-      $node = $oldXml.SelectSingleNode("/map/string[@name='conversation_history_json']")
-      if ($null -ne $node -and -not [string]::IsNullOrWhiteSpace($node.InnerText)) {
-        $rows = @(ConvertFrom-Json -InputObject $node.InnerText)
-        if ($rows.Count -gt 30) { $rows = @($rows | Select-Object -Last 30) }
-        $historyText = ConvertTo-Json -InputObject $rows -Depth 12 -Compress
-        $tempHistory = Join-Path ([IO.Path]::GetTempPath()) ("aerial-voice-history-" + [Guid]::NewGuid().ToString("N") + ".json")
+      $oldPrefs = @(& adb -s $Tv exec-out run-as $legacyPackage cat shared_prefs/aerial_voice_settings.xml 2>$null)
+      if ($LASTEXITCODE -ne 0) { throw "run-as старого приложения недоступен" }
+      [xml]$parsed = $oldPrefs -join [Environment]::NewLine
+      $historyNode = $parsed.SelectSingleNode("/map/string[@name='conversation_history_json']")
+      if ($null -ne $historyNode -and -not [string]::IsNullOrWhiteSpace($historyNode.InnerText)) {
+        $items = @(ConvertFrom-Json $historyNode.InnerText)
+        if ($items.Count -gt 30) { $items = @($items | Select-Object -Last 30) }
+        $textToSave = ConvertTo-Json -InputObject $items -Depth 12 -Compress
+        $tmpHistory = Join-Path ([IO.Path]::GetTempPath()) ("aerial-history-" + [Guid]::NewGuid().ToString("N") + ".json")
         try {
-          [IO.File]::WriteAllText($tempHistory, $historyText, [Text.UTF8Encoding]::new($false))
-          Adb -ArgsList @("-s", $Tv, "push", $tempHistory, $remoteHistory)
+          [IO.File]::WriteAllText($tmpHistory, $textToSave, [Text.UTF8Encoding]::new($false))
+          Adb -ArgsList @("-s", $Tv, "push", $tmpHistory, $remoteHistory)
           $historyStaged = $true
-          Write-Host "История 0.5.2 подготовлена к переносу ($($rows.Count) сообщений)." -ForegroundColor Green
+          Write-Host "История 0.5.2 подготовлена к переносу." -ForegroundColor Green
         } finally {
-          Remove-Item -LiteralPath $tempHistory -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $tmpHistory -Force -ErrorAction SilentlyContinue
         }
       }
     } catch {
-      Write-Warning ("Историю 0.5.2 автоматически перенести не удалось: " + $_.Exception.Message)
+      Write-Warning ("Историю 0.5.2 перенести не удалось. Старые данные сохранены: " + $_.Exception.Message)
     }
   }
 }
@@ -110,6 +118,7 @@ if ($null -ne $secureKey -and $secureKey.Length -gt 0) {
     if ([Text.Encoding]::UTF8.GetByteCount($keyText.Trim()) -gt 16384) { throw "Authorization Key is too long" }
     # PowerShell 5.1's Set-Content -Encoding UTF8 adds a BOM. Use BOM-free UTF8.
     [IO.File]::WriteAllText($temporaryKeyFile, $keyText.Trim(), [Text.UTF8Encoding]::new($false))
+    # Remove any stale success marker before this import attempt.
     & adb -s $Tv shell rm -f $remoteKeyStatus 2>$null | Out-Null
     $remoteKeyStaged = $true
     Adb -ArgsList @("-s", $Tv, "push", $temporaryKeyFile, $remoteKey)
@@ -136,16 +145,13 @@ try {
     $imported = $false
     for ($attempt = 0; $attempt -lt 45; $attempt++) {
       Start-Sleep -Milliseconds 700
-      $response = @(& adb -s $Tv shell cat $remoteKeyStatus 2>$null) -join ''
+      $ack = @(& adb -s $Tv shell cat $remoteKeyStatus 2>$null) -join ""
       if ($LASTEXITCODE -ne 0) { continue }
-      $status = $response.Trim()
-      if ($status -eq 'ok') { $imported = $true; break }
-      if ($status -eq 'error') { throw "Приложение сообщило об ошибке импорта Authorization Key." }
+      if ($ack.Trim() -eq "ok") { $imported = $true; break }
+      if ($ack.Trim() -eq "error") { throw "Приложение не смогло сохранить Authorization Key." }
     }
-    if (-not $imported) {
-      throw "Приложение не подтвердило сохранение ключа. Временный файл будет удалён."
-    }
-    Write-Host "Authorization Key импортирован, проверен и зашифрован Android Keystore." -ForegroundColor Green
+    if (-not $imported) { throw "Нет подтверждения сохранения ключа от приложения." }
+    Write-Host "Authorization Key проверен приложением и сохранён в Android Keystore." -ForegroundColor Green
   }
 }
 finally {
@@ -153,106 +159,17 @@ finally {
     # Do not leave an unencrypted bootstrap file behind if startup/import failed.
     & adb -s $Tv shell rm -f $remoteKey $remoteKeyStatus 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
-      Write-Warning "Не удалось удалить временный файл ключа на ТВ. Повторно подключите ADB и удали: $remoteKey"
-    }
-  }
-  if ($historyStaged) {
-    # The app should remove it after importing; never delete old app history.
-    & adb -s $Tv shell rm -f $remoteHistory 2>$null | Out-Null
-  }
-}
-Write-Host "Установка завершена. Старый Aerial Voice 0.5.2 не удалялся." -ForegroundColor Green
-) {
-    $freeKiB = [long]$parts[3]
-    Write-Host ("Свободно в /data: {0} МБ" -f [math]::Floor($freeKiB / 1024))
-    if ($freeKiB -lt (400 * 1024)) {
-      throw "На телевизоре слишком мало памяти для двух моделей (менее 400 МБ). Освободи место."
-    }
-  }
-}
-# adb install -r preserves data; a signing mismatch never triggers uninstall.
-Adb -ArgsList @("-s", $Tv, "install", "-r", $Apk)
-# Runtime permissions are best-effort; OEM firmware may still require manual approval.
-& adb -s $Tv shell pm grant $Package android.permission.RECORD_AUDIO 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Warning "Разрешение микрофона нужно выдать вручную на ТВ." }
-& adb -s $Tv shell appops set $Package GET_USAGE_STATS allow 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Warning "Разрешение на контекст открытых приложений не выдано автоматически." }
-$remote = "/sdcard/Android/data/$Package/files/offline-models"
-Adb -ArgsList @("-s", $Tv, "shell", "mkdir", "-p", "$remote/vosk", "$remote/gigaam-v3")
-foreach ($relative in $expected) {
-  $local = Join-Path $Models ($relative.Replace('/', [IO.Path]::DirectorySeparatorChar))
-  $dest = "$remote/$relative"
-  Adb -ArgsList @("-s", $Tv, "push", $local, $dest)
-  $entry = @($manifest.files | Where-Object { $_.path -eq $relative }) | Select-Object -First 1
-  $remoteHash = @(& adb -s $Tv shell sha256sum $dest 2>$null)
-  if ($LASTEXITCODE -ne 0 -or ($remoteHash -join "") -notmatch "^[0-9a-fA-F]{64}") {
-    throw "TV has no sha256sum, or hash check failed for $relative. Models were transferred but not verified."
-  }
-  $digest = (($remoteHash -join "") -split '\s+')[0].ToLowerInvariant()
-  if ($digest -ne [string]$entry.sha256) { throw "TV SHA256 mismatch: $relative" }
-}
-# One-time GigaChat key bootstrap. The key is NEVER embedded in APK,
-# printed, added to command-line parameters or committed to GitHub.
-# The app imports it on launch, stores it in Android Keystore and deletes the file.
-$remoteKey = "/sdcard/Android/data/$Package/files/aerial_voice_bootstrap_key.txt"
-$remoteKeyStaged = $false
-Write-Host ""
-Write-Host "GigaChat: введите Authorization Key на компьютере." -ForegroundColor Cyan
-Write-Host "Если ключа пока нет, нажмите Enter: распознавание будет работать без него." -ForegroundColor Yellow
-$secureKey = Read-Host "Authorization Key (ввод скрыт)" -AsSecureString
-if ($null -ne $secureKey -and $secureKey.Length -gt 0) {
-  $keyPointer = [IntPtr]::Zero
-  $keyText = $null
-  $temporaryKeyFile = Join-Path ([IO.Path]::GetTempPath()) ("aerial-voice-bootstrap-" + [Guid]::NewGuid().ToString("N") + ".tmp")
-  try {
-    $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-    $keyText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer)
-    if ([string]::IsNullOrWhiteSpace($keyText)) { throw "Authorization Key is empty" }
-    if ([Text.Encoding]::UTF8.GetByteCount($keyText.Trim()) -gt 16384) { throw "Authorization Key is too long" }
-    # PowerShell 5.1's Set-Content -Encoding UTF8 adds a BOM. Use BOM-free UTF8.
-    [IO.File]::WriteAllText($temporaryKeyFile, $keyText.Trim(), [Text.UTF8Encoding]::new($false))
-    Adb -ArgsList @("-s", $Tv, "push", $temporaryKeyFile, $remoteKey)
-    $remoteKeyStaged = $true
-    Write-Host "Authorization Key передан; приложение зашифрует его при запуске." -ForegroundColor Cyan
-  }
-  finally {
-    if ($keyPointer -ne [IntPtr]::Zero) {
-      [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPointer)
-    }
-    $keyText = $null
-    $secureKey.Dispose()
-    if (Test-Path -LiteralPath $temporaryKeyFile) {
-      Remove-Item -LiteralPath $temporaryKeyFile -Force -ErrorAction SilentlyContinue
-    }
-  }
-}
-
-try {
-  Adb -ArgsList @("-s", $Tv, "shell", "am", "force-stop", $Package)
-  Write-Host "Models staged and verified. Vosk will import on app launch." -ForegroundColor Green
-  Write-Host "GigaAM is configured as primary recognizer; Vosk is the fallback."
-  Adb -ArgsList @("-s", $Tv, "shell", "monkey", "-p", $Package, "1")
-  if ($remoteKeyStaged) {
-    $imported = $false
-    for ($attempt = 0; $attempt -lt 30; $attempt++) {
-      Start-Sleep -Milliseconds 700
-      # An exit code of 1 from test -e means the file was removed by the app.
-      & adb -s $Tv shell test -e $remoteKey 2>$null | Out-Null
-      if ($LASTEXITCODE -eq 1) { $imported = $true; break }
-      if ($LASTEXITCODE -ne 0) { throw "Не удалось проверить импорт Authorization Key через ADB." }
-    }
-    if (-not $imported) {
-      throw "Приложение не подтвердило импорт ключа. Временный файл будет удален; проверьте настройки GigaChat."
-    }
-    Write-Host "Authorization Key импортирован приложением и сохранен в Android Keystore." -ForegroundColor Green
-  }
-}
-finally {
-  if ($remoteKeyStaged) {
-    # Do not leave an unencrypted bootstrap file behind if startup/import failed.
-    & adb -s $Tv shell rm -f $remoteKey 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
       Write-Warning "Не удалось удалить временный файл ключа на ТВ. Повторно подключите ADB и удалите: $remoteKey"
     }
   }
 }
+
+if ($historyStaged) {
+  & adb -s $Tv shell test -e $remoteHistory 2>$null | Out-Null
+  if ($LASTEXITCODE -eq 0) {
+    Write-Warning "История ожидает импорта приложением. Старые данные 0.5.2 не удалены."
+  } else {
+    Write-Host "История 0.5.2 импортирована." -ForegroundColor Green
+  }
+}
+Write-Host "Aerial Voice установлен. Старое приложение 0.5.2 не удалялось." -ForegroundColor Green
