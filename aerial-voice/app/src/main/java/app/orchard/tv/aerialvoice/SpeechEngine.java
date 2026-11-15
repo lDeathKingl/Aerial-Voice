@@ -248,6 +248,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     }
 
     public boolean isVoskReady() { return modelReady && model != null; }
+    public boolean isVoskLoading() { return modelLoading; }
     public boolean isGigaReady() {
         try { return gigaAmEngine.isInstalled(); }
         catch (Throwable error) { return false; }
@@ -342,7 +343,8 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         deliverResult = true;
         handsFreeCapture = handsFree;
         listening = true;
-        captureThread = new Thread(() -> captureFromRemoteMic(engine), "AerialVoice-ASR-RCIn");
+        boolean allowFallback = AsrSelector.AUTO.equals(selectedAsr);
+        captureThread = new Thread(() -> captureFromRemoteMic(engine, allowFallback), "AerialVoice-ASR-RCIn");
         captureThread.start();
     }
 
@@ -366,7 +368,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     }
 
     /** Records from the verified remote input. Never silently switches to TV's MIC. */
-    private void captureFromRemoteMic(String selectedEngine) {
+    private void captureFromRemoteMic(String selectedEngine, boolean allowFallback) {
         AudioRecord record = null;
         Recognizer streamingVosk = null;
         String failure = null;
@@ -500,7 +502,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                         String message = gigaError.getMessage();
                         lastAsrError = "GigaAM: " + (message == null ? gigaError.getClass().getSimpleName() : message);
                         Log.e(TAG, "GigaAM failed; attempting Vosk fallback", gigaError);
-                        if (AsrSelector.AUTO.equals(selectedAsr) && isVoskReady()) {
+                        if (allowFallback && isVoskReady()) {
                             postStatus("GigaAM не сработал. Повторно распознаю через Vosk…");
                             String phrase = recognizeBufferedWithVosk(buffered, bufferedCount);
                             if (phrase.isEmpty()) throw new IOException("Vosk тоже не распознал речь.");
