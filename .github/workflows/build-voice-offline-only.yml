@@ -109,11 +109,12 @@ jobs:
           cp tools/README_OFFLINE_RU.md dist/README_OFFLINE_RU.md
           cd dist
           zip -q -r -9 aerial-voice-0.6.3-offline-complete.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 diagnose-offline.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
-          unzip -tq aerial-voice-0.6.2-offline-complete.zip
+          unzip -tq aerial-voice-0.6.3-offline-complete.zip
+          rm aerial-voice-0.6.3-offline-complete.zip # Keep the artifact single-layer
       - name: Upload complete offline ZIP
         uses: actions/upload-artifact@v4
         with:
           name: aerial-voice-0.6.3-offline-complete
-          path: dist/aerial-voice-0.6.2-offline-complete.zip
+          path: dist/
           if-no-files-found: error
           retention-days: 30
