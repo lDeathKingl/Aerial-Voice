@@ -1115,7 +1115,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private void refreshDiagnostics() {
         if (diagnosticsText == null) return;
         String ttsState = speech == null ? "не запущена" : speech.getTtsShortState();
-        String giga = speech != null && speech.isGigaReady() ? "готов" : "нет модели";
+        String giga = speech != null && speech.isGigaReady() ? "файлы есть" : "нет модели";
         String vosk = speech != null && speech.isVoskReady()
                 ? "готов" : speech != null && speech.isVoskLoading() ? "загружается" : "не готов";
         String asr = speech == null ? AsrSelector.AUTO : speech.getAsrEngine();
