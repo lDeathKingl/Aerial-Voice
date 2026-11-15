@@ -53,6 +53,12 @@ jobs:
             keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+      - name: Download and verify pinned sherpa-onnx Android AAR
+        run: |
+          mkdir -p aerial-voice/app/libs
+          curl --fail --location --retry 3 --retry-delay 2 "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar" -o aerial-voice/app/libs/sherpa-onnx-2.0.1.aar
+          echo "a8d09d1d32f3eb8520482c6d3d43fae674681c5b050385967c70a3c2c9bf0ee7  aerial-voice/app/libs/sherpa-onnx-2.0.1.aar" | sha256sum -c -
+
       - name: Build full and micTest06 Aerial Voice APKs
         working-directory: aerial-voice
         run: gradle --no-daemon clean :app:testMicTestDebugUnitTest :app:assembleFullDebug :app:assembleMicTestDebug
