@@ -44,6 +44,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private volatile Model model;
     private final GigaAmEngine gigaAmEngine;
     private volatile String selectedAsr = AsrSelector.AUTO;
+    private volatile int selectedAudioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION;
     private volatile String lastAsrEngine = "ещё не использовался";
     private volatile long lastAsrMillis;
     private volatile String lastAudioRoute = "не проверен";
@@ -270,6 +271,11 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     public boolean isListening() { return listening; }
     public void setAsrEngine(String name) { selectedAsr = AsrSelector.normalized(name); }
     public String getAsrEngine() { return selectedAsr; }
+    public void setAudioSource(int source) {
+        if (source == MediaRecorder.AudioSource.MIC || source == MediaRecorder.AudioSource.VOICE_RECOGNITION)
+            selectedAudioSource = source;
+    }
+    public int getAudioSource() { return selectedAudioSource; }
     public String getAsrDiagnostics() {
         String choice = AsrSelector.choose(selectedAsr, isGigaReady(), isVoskReady());
         long freeMiB = context.getFilesDir().getUsableSpace() / (1024L * 1024L);
@@ -277,6 +283,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 + "\nGigaAM: " + (isGigaReady() ? "модель доступна" : "модель отсутствует")
                 + "\nVosk: " + (isVoskReady() ? "готов" : modelLoading ? "загружается" : "не готов")
                 + "\nАктивный движок: " + (choice.isEmpty() ? "недоступен" : choice)
+                + "\nИсточник AudioRecord: " + (selectedAudioSource == MediaRecorder.AudioSource.MIC ? "MIC" : "VOICE_RECOGNITION")
                 + "\nПоследнее распознавание: " + lastAsrEngine
                 + "\nОбработка после записи: " + lastAsrMillis + " мс"
                 + "\nАудиовход: " + lastAudioRoute
@@ -354,7 +361,8 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         handsFreeCapture = handsFree;
         listening = true;
         boolean allowFallback = AsrSelector.AUTO.equals(selectedAsr);
-        captureThread = new Thread(() -> captureFromRemoteMic(engine, allowFallback), "AerialVoice-ASR-RCIn");
+        int chosenSource = selectedAudioSource;
+        captureThread = new Thread(() -> captureFromRemoteMic(engine, allowFallback, chosenSource), "AerialVoice-ASR-RCIn");
         captureThread.start();
     }
 
@@ -378,7 +386,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     }
 
     /** Records from the verified remote input. Never silently switches to TV's MIC. */
-    private void captureFromRemoteMic(String selectedEngine, boolean allowFallback) {
+    private void captureFromRemoteMic(String selectedEngine, boolean allowFallback, int audioSource) {
         AudioRecord record = null;
         Recognizer streamingVosk = null;
         String failure = null;
@@ -415,7 +423,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                     .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                     .build();
             record = new AudioRecord.Builder()
-                    .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                    .setAudioSource(audioSource)
                     .setAudioFormat(format)
                     .setBufferSizeInBytes(Math.max(minimumBuffer * 2, FRAME_SAMPLES * 4))
                     .build();
@@ -443,7 +451,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             if (!routeConfirmed) {
                 throw new IOException("Android не подтвердил RC In. Реальный вход: " + describe(actual));
             }
-            postStatus("RC In: записываю фразу (" + (gigaPrimary ? "GigaAM" : "Vosk") + ")…");
+            postStatus("RC In через " + (audioSource == MediaRecorder.AudioSource.MIC ? "MIC" : "VOICE_RECOGNITION") + ": записываю (" + (gigaPrimary ? "GigaAM" : "Vosk") + ")…");
             long startedAt = android.os.SystemClock.elapsedRealtime();
             lastVoiceAt = startedAt;
             String lastPartial = "";
