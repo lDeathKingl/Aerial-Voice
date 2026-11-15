@@ -185,12 +185,13 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private String importBootstrapKey() {
         java.io.File bootstrapFile = null;
         boolean saved = false;
+        boolean attemptedImport = false;
         try {
             java.io.File externalDir = getExternalFilesDir(null);
             if (externalDir == null) return "";
             bootstrapFile = new java.io.File(externalDir, "aerial_voice_bootstrap_key.txt");
             if (!bootstrapFile.isFile()) return "";
-
+            attemptedImport = true;
             java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
             try (java.io.InputStream input = new java.io.FileInputStream(bootstrapFile)) {
                 byte[] buffer = new byte[1024];
@@ -202,31 +203,44 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                     bytes.write(buffer, 0, count);
                 }
             }
-
             String key = new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8).trim();
             if (key.isEmpty()) throw new IllegalStateException("Файл первичной настройки пуст.");
             SecretStore.save(this, key);
-            saved = true;
+            // Verify the encrypted key can immediately be decrypted again.
+            saved = key.equals(SecretStore.read(this));
+            if (!saved) throw new IllegalStateException("Не удалось подтвердить сохранение ключа.");
             return "Authorization Key импортирован и зашифрован на телевизоре";
         } catch (Exception e) {
             String message = e.getMessage();
             return "Не удалось импортировать Authorization Key: "
                     + (message == null || message.trim().isEmpty() ? e.getClass().getSimpleName() : message);
         } finally {
-            if (saved && bootstrapFile != null && bootstrapFile.exists()) {
-                try {
-                    long length = bootstrapFile.length();
-                    if (length > 0 && length <= 16384) {
-                        try (java.io.FileOutputStream output = new java.io.FileOutputStream(bootstrapFile, false)) {
-                            output.write(new byte[(int) length]);
-                            output.flush();
+            if (attemptedImport && bootstrapFile != null) {
+                // Delete plaintext even after a failed import.
+                if (bootstrapFile.exists()) {
+                    try {
+                        long size = bootstrapFile.length();
+                        if (size > 0 && size <= 16384) {
+                            try (java.io.FileOutputStream output =
+                                         new java.io.FileOutputStream(bootstrapFile, false)) {
+                                output.write(new byte[(int) size]);
+                                output.flush();
+                            }
                         }
-                    }
-                } catch (Exception ignored) { }
-                // Flash storage cannot guarantee forensic erasure; remove the temporary file after import.
-                // The persistent copy is now encrypted with an Android Keystore key.
-                //noinspection ResultOfMethodCallIgnored
-                bootstrapFile.delete();
+                    } catch (Exception ignored) { }
+                    // Flash-memory erasure cannot be guaranteed.
+                    //noinspection ResultOfMethodCallIgnored
+                    bootstrapFile.delete();
+                }
+                // Non-secret acknowledgement read by the Windows ADB installer.
+                try (java.io.FileOutputStream acknowledgement = new java.io.FileOutputStream(
+                        new java.io.File(bootstrapFile.getParentFile(), "aerial_voice_bootstrap_key.status"))) {
+                    acknowledgement.write((saved ? "ok" : "error")
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    acknowledgement.flush();
+                } catch (Exception e) {
+                    Log.w("AerialVoice", "Could not write bootstrap acknowledgement", e);
+                }
             }
         }
     }
