@@ -18,16 +18,60 @@ function Invoke-Adb {
   }
 }
 
+function Invoke-AdbQuiet {
+  param([string[]]$Arguments)
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = @(& adb @Arguments 2>$null)
+    $exitCode = $LASTEXITCODE
+  }
+  finally {
+    $ErrorActionPreference = $previousPreference
+  }
+  return [pscustomobject]@{
+    Output = $output
+    ExitCode = $exitCode
+  }
+}
+
 function Get-RemoteSha256 {
   param([string]$RemotePath)
-  $output = @(& adb -s $Tv shell sha256sum $RemotePath 2>$null)
-  if ($LASTEXITCODE -ne 0 -or ($output -join " ") -notmatch "^[0-9a-fA-F]{64}") {
-    $output = @(& adb -s $Tv shell toybox sha256sum $RemotePath 2>$null)
+
+  # First use Android's SHA-256 applet, when available.
+  $result = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "sha256sum", $RemotePath)
+  $outputText = $result.Output -join " "
+  if ($result.ExitCode -eq 0 -and $outputText -match "([0-9a-fA-F]{64})") {
+    return $Matches[1].ToLowerInvariant()
   }
-  if ($LASTEXITCODE -ne 0 -or ($output -join " ") -notmatch "^[0-9a-fA-F]{64}") {
+
+  # Some Android TV firmware exposes the applet only through toybox.
+  $result = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "toybox", "sha256sum", $RemotePath)
+  $outputText = $result.Output -join " "
+  if ($result.ExitCode -eq 0 -and $outputText -match "([0-9a-fA-F]{64})") {
+    return $Matches[1].ToLowerInvariant()
+  }
+
+  # Last-resort compatibility path: pull the existing file to the PC and hash it there.
+  # This also distinguishes a missing remote file from an unsupported hash command.
+  $exists = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "test", "-f", $RemotePath)
+  if ($exists.ExitCode -ne 0) {
     return ""
   }
-  return ((($output -join " ") -split "\s+")[0]).ToLowerInvariant()
+
+  $temporaryCopy = Join-Path ([IO.Path]::GetTempPath()) ("aerial-remote-check-" + [Guid]::NewGuid().ToString("N") + ".tmp")
+  try {
+    $pull = Invoke-AdbQuiet -Arguments @("-s", $Tv, "pull", $RemotePath, $temporaryCopy)
+    if ($pull.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $temporaryCopy)) {
+      return ""
+    }
+    return (Get-FileHash -LiteralPath $temporaryCopy -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  finally {
+    if (Test-Path -LiteralPath $temporaryCopy) {
+      Remove-Item -LiteralPath $temporaryCopy -Force -ErrorAction SilentlyContinue
+    }
+  }
 }
 
 if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
@@ -80,8 +124,9 @@ if ($LASTEXITCODE -ne 0 -or ($deviceState -join "").Trim() -ne "device") {
   throw "TV is not authorized for ADB. Check Network Debugging on the TV and accept the connection prompt."
 }
 
-$beforeInstall = @(& adb -s $Tv shell pm path $Package 2>$null)
-$hadNewPackage = ($LASTEXITCODE -eq 0) -and (($beforeInstall -join "") -match "package:")
+$beforeInstallResult = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "pm", "path", $Package)
+$beforeInstall = $beforeInstallResult.Output
+$hadNewPackage = ($beforeInstallResult.ExitCode -eq 0) -and (($beforeInstall -join "") -match "package:")
 
 $dfResult = @(& adb -s $Tv shell df -k /data 2>$null)
 if ($LASTEXITCODE -eq 0 -and $dfResult.Count -gt 1) {
@@ -98,12 +143,12 @@ if ($LASTEXITCODE -eq 0 -and $dfResult.Count -gt 1) {
 Write-Host "Installing Aerial Voice. Existing app data will be preserved..." -ForegroundColor Cyan
 Invoke-Adb -Arguments @("-s", $Tv, "install", "-r", $Apk)
 
-& adb -s $Tv shell pm grant $Package android.permission.RECORD_AUDIO 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
+$permissionResult = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "pm", "grant", $Package, "android.permission.RECORD_AUDIO")
+if ($permissionResult.ExitCode -ne 0) {
   Write-Warning "Microphone permission was not granted automatically. Check it on the TV."
 }
-& adb -s $Tv shell appops set $Package GET_USAGE_STATS allow 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
+$usageResult = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "appops", "set", $Package, "GET_USAGE_STATS", "allow")
+if ($usageResult.ExitCode -ne 0) {
   Write-Warning "Usage access was not granted automatically. It can be enabled manually."
 }
 
@@ -135,11 +180,13 @@ $remoteHistory = "/sdcard/Android/data/$Package/files/aerial_voice_bootstrap_his
 $historyStaged = $false
 if (-not $SkipHistory -and -not $hadNewPackage) {
   $legacyPackage = "app.orchard.tv.aerialvoice.mictest"
-  $legacyInstalled = @(& adb -s $Tv shell pm path $legacyPackage 2>$null)
-  if ($LASTEXITCODE -eq 0 -and (($legacyInstalled -join "") -match "package:")) {
+  $legacyResult = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "pm", "path", $legacyPackage)
+  $legacyInstalled = $legacyResult.Output
+  if ($legacyResult.ExitCode -eq 0 -and (($legacyInstalled -join "") -match "package:")) {
     try {
-      $oldPrefs = @(& adb -s $Tv exec-out run-as $legacyPackage cat shared_prefs/aerial_voice_settings.xml 2>$null)
-      if ($LASTEXITCODE -ne 0) {
+      $oldPrefsResult = Invoke-AdbQuiet -Arguments @("-s", $Tv, "exec-out", "run-as", $legacyPackage, "cat", "shared_prefs/aerial_voice_settings.xml")
+      $oldPrefs = $oldPrefsResult.Output
+      if ($oldPrefsResult.ExitCode -ne 0) {
         throw "The old app does not allow reading its settings with run-as."
       }
       $oldPrefsText = $oldPrefs -join [Environment]::NewLine
@@ -209,8 +256,9 @@ try {
     $imported = $false
     for ($attempt = 0; $attempt -lt 45; $attempt++) {
       Start-Sleep -Milliseconds 700
-      $ack = @(& adb -s $Tv shell cat $remoteKeyStatus 2>$null) -join ""
-      if ($LASTEXITCODE -ne 0) {
+      $ackResult = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "cat", $remoteKeyStatus)
+      $ack = $ackResult.Output -join ""
+      if ($ackResult.ExitCode -ne 0) {
         continue
       }
       if ($ack.Trim() -eq "ok") {
@@ -247,8 +295,8 @@ finally {
 }
 
 if ($historyStaged) {
-  & adb -s $Tv shell test -e $remoteHistory 2>$null | Out-Null
-  if ($LASTEXITCODE -eq 0) {
+  $historyResult = Invoke-AdbQuiet -Arguments @("-s", $Tv, "shell", "test", "-e", $remoteHistory)
+  if ($historyResult.ExitCode -eq 0) {
     Write-Warning "History is still waiting for import. The old 0.5.2 app data was not deleted."
   }
   else {
