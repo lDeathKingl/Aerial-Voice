@@ -107,6 +107,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         String selectedEngine = getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_engine", "");
         speech = new SpeechEngine(this, this, selectedEngine);
         speech.setAsrEngine(getSharedPreferences(PREFS, MODE_PRIVATE).getString("asr_engine", AsrSelector.AUTO));
+        speech.setAudioSource(getSharedPreferences(PREFS, MODE_PRIVATE).getInt(
+                "asr_audio_source", MediaRecorder.AudioSource.VOICE_RECOGNITION));
         speech.setTtsVoice(getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_voice", ""));
         String bootstrapStatus = importBootstrapKey();
         String historyStatus = importBootstrapHistory();
@@ -811,6 +813,15 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         picker.setSelection(AsrSelector.GIGAAM.equals(current) ? 1
                 : AsrSelector.VOSK.equals(current) ? 2 : 0);
         form.addView(picker);
+        form.addView(label("Аудиоисточник (маршрут RC In обязателен)"));
+        Spinner sourcePicker = new Spinner(this);
+        String[] audioNames = {"VOICE_RECOGNITION (по умолчанию)", "MIC (для некоторых прошивок)"};
+        ArrayAdapter<String> sourceAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, audioNames);
+        sourceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        sourcePicker.setAdapter(sourceAdapter);
+        sourcePicker.setSelection(speech.getAudioSource() == MediaRecorder.AudioSource.MIC ? 1 : 0);
+        form.addView(sourcePicker);
         TextView detail = text(speech.getAsrDiagnostics()
                 + "\n\nРежим «Авто» предпочитает GigaAM; при ошибке пробует Vosk."
                 + "\nРежимы «Только…» не переключаются автоматически.", 14, MUTED, false);
@@ -821,11 +832,15 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 .setView(form)
                 .setPositiveButton("Сохранить", (d, w) -> {
                     String next = choices[picker.getSelectedItemPosition()];
+                    int source = sourcePicker.getSelectedItemPosition() == 1
+                            ? MediaRecorder.AudioSource.MIC : MediaRecorder.AudioSource.VOICE_RECOGNITION;
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                            .putString("asr_engine", next).apply();
+                            .putString("asr_engine", next)
+                            .putInt("asr_audio_source", source).apply();
                     speech.setAsrEngine(next);
+                    speech.setAudioSource(source);
                     refreshDiagnostics();
-                    setStatus("Движок изменён. Выбор применяется к следующей записи.", GREEN);
+                    setStatus("Распознавание и аудиоисточник сохранены для следующей записи.", GREEN);
                 })
                 .setNegativeButton("Отмена", null)
                 .show();
