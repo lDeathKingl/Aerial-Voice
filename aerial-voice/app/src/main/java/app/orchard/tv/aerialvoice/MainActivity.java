@@ -104,7 +104,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
-        String selectedEngine = getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_engine", "");
+        String selectedEngine = getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_engine", "auto");
         speech = new SpeechEngine(this, this, selectedEngine);
         speech.setAsrEngine(getSharedPreferences(PREFS, MODE_PRIVATE).getString("asr_engine", AsrSelector.AUTO));
         speech.setAudioSource(getSharedPreferences(PREFS, MODE_PRIVATE).getInt(
@@ -858,7 +858,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         List<SpeechEngine.EngineChoice> engineOptions = speech == null
                 ? new ArrayList<>() : speech.getAvailableTtsEngines();
         List<String> engineLabels = new ArrayList<>();
-        engineLabels.add("Системный по умолчанию");
+        engineLabels.add("Автоматически: RHVoice, затем системный");
+        engineLabels.add("Системный TTS (без RHVoice)");
         for (SpeechEngine.EngineChoice option : engineOptions) {
             engineLabels.add(option.label + " (" + option.packageName + ")");
         }
@@ -867,10 +868,10 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 android.R.layout.simple_spinner_item, engineLabels);
         engineAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         enginePicker.setAdapter(engineAdapter);
-        String selectedEngine = prefs.getString("tts_engine", "");
-        int selectedIndex = 0;
+        String selectedEngine = prefs.getString("tts_engine", "auto");
+        int selectedIndex = "system".equals(selectedEngine) || selectedEngine.isEmpty() ? 1 : 0;
         for (int i = 0; i < engineOptions.size(); i++) {
-            if (engineOptions.get(i).packageName.equals(selectedEngine)) selectedIndex = i + 1;
+            if (engineOptions.get(i).packageName.equals(selectedEngine)) selectedIndex = i + 2;
         }
         enginePicker.setSelection(selectedIndex);
         form.addView(label("Скорость речи (1.0 — обычная)"));
@@ -897,7 +898,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         form.addView(enginePicker);
         form.addView(label("Конкретный русский голос"));
         form.addView(voicePicker);
-        form.addView(label("Выбери установленный движок и русский голос. Если меняешь движок, сначала сохрани его и открой настройки голоса повторно — список голосов обновится."));
+        form.addView(label("Режим «Автоматически» выбирает установленный RHVoice. Если он не поддерживает русский, приложение использует системный движок. При смене TTS сохрани настройку и открой этот экран повторно для выбора нового голоса."));
         Button testVoice = button("Проверить русскую озвучку", false);
         form.addView(testVoice);
         AlertDialog voiceDialog = new AlertDialog.Builder(this).setTitle("Настройки голоса").setView(form)
@@ -909,8 +910,10 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                             throw new IllegalArgumentException("Значения вне допустимого диапазона.");
                         }
                         int engineIndex = enginePicker.getSelectedItemPosition();
-                        String newEngine = engineIndex <= 0 || engineIndex - 1 >= engineOptions.size()
-                                ? "" : engineOptions.get(engineIndex - 1).packageName;
+                        String newEngine = engineIndex == 0 ? "auto"
+                                : engineIndex == 1 ? "system"
+                                : engineIndex - 2 >= engineOptions.size() ? "system"
+                                : engineOptions.get(engineIndex - 2).packageName;
                         int voicePosition = voicePicker.getSelectedItemPosition();
                         String newVoice = voicePosition <= 0 || voicePosition - 1 >= voiceOptions.size()
                                 ? "" : voiceOptions.get(voicePosition - 1).name;
@@ -919,8 +922,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                         speech.setVoiceSettings(newRate, newPitch);
                         speech.setTtsVoice(newVoice);
                         speech.setTtsEngine(newEngine);
-                        setStatus("Настройки голоса сохранены", GREEN);
-                        speech.speak("Настройки голоса сохранены.");
+                        setStatus("Настройки голоса сохранены. Проверка озвучки доступна после инициализации.", GREEN);
                     } catch (Exception e) {
                         setStatus("Проверь скорость и высоту голоса", Color.rgb(251, 146, 60));
                         setAnswer("Скорость должна быть от 0.65 до 1.4, высота — от 0.7 до 1.3.");
