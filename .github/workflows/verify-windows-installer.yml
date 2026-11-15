@@ -1,0 +1,55 @@
+name: Verify Windows installer on PowerShell 5.1
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pre-tv-0.6.4
+    paths:
+      - 'tools/offline-install.ps1'
+      - 'tools/check-gigachat-import.ps1'
+      - 'tools/INSTALL_OFFLINE.cmd'
+      - '.github/workflows/verify-windows-installer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-windows:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Windows PowerShell 5.1 syntax and encoding
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @('tools/offline-install.ps1','tools/check-gigachat-import.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $name).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              foreach ($parseError in $errors) {
+                Write-Error ($name + ': ' + $parseError.ToString())
+              }
+              exit 1
+            }
+            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $name).Path)
+            if (@($bytes | Where-Object { $_ -gt 127 }).Count -gt 0) {
+              throw ($name + ' must be ASCII-only')
+            }
+            Write-Host ($name + ': OK')
+          }
+          $cmdBytes = [System.IO.File]::ReadAllBytes((Resolve-Path 'tools/INSTALL_OFFLINE.cmd').Path)
+          if (@($cmdBytes | Where-Object { $_ -gt 127 }).Count -gt 0) {
+            throw 'INSTALL_OFFLINE.cmd must be ASCII-only'
+          }
+      - name: Publish installer-only patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: aerial-voice-0.6.4-windows-installer-fix
+          path: |
+            tools/offline-install.ps1
+            tools/check-gigachat-import.ps1
+            tools/INSTALL_OFFLINE.cmd
+          retention-days: 30
