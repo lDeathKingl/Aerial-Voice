@@ -1,10 +1,11 @@
-name: Build Aerial Voice 0.6.2 Offline Bundle
+name: Build Aerial Voice Offline Bundle
 
 on:
   workflow_dispatch:
   push:
     branches:
       - feature/offline-asr-0.6.2
+      - feature/stability-0.6.3
 
 permissions:
   contents: read
