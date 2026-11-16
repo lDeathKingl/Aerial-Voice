@@ -287,10 +287,11 @@ public final class FloatingVoiceActivity extends Activity implements SpeechEngin
         say(text);
     }
     private void say(String text){
-        if(speech!=null && speech.isTtsReady()) speech.speak(text);
-        else {
+        boolean accepted=speech!=null && speech.speak(text);
+        if(!accepted){
             processing=false;
-            status.setText("Текст ответа готов; озвучка RHVoice недоступна.");
+            continuous=false;updateDialogue();
+            status.setText("Текст ответа готов; озвучка RHVoice недоступна или отклонена Android.");
             // Do not loop automatically when TTS failed.
         }
     }
