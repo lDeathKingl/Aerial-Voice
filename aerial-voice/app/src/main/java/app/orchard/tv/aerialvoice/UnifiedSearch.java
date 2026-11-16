@@ -230,7 +230,7 @@ public final class UnifiedSearch {
                 rows.add(new Row(limit(title,140), limit(subtitle,210),provider.label,
                         provider.pkg, provider.authority,action,data,
                         get(cursor, SearchManager.SUGGEST_COLUMN_ICON_1),
-                        pick(get(cursor, SearchManager.SUGGEST_COLUMN_INTENT_QUERY),query)));
+                        pick(get(cursor, SearchManager.SUGGEST_COLUMN_QUERY),query)));
             }
         } catch (Exception err) {
             Log.w(TAG, "Query failed: " + provider.authority, err);
