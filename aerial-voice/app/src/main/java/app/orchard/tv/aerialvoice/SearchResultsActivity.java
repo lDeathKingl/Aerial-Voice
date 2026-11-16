@@ -132,7 +132,7 @@ public final class SearchResultsActivity extends Activity {
         FilmSelectionStore.saveResults(this,query,result.rows);
         if(getIntent().getBooleanExtra(EXTRA_AUTO_OPEN,false) && total==1){
             UnifiedSearch.Row only=result.rows.get(0);
-            if(UnifiedSearch.open(this,only)){
+            if(UnifiedSearch.openWithOutcome(this,only)==UnifiedSearch.OpenOutcome.CARD){
                 FilmSelectionStore.rememberOpened(this,only);
                 finish();
                 return;
@@ -226,8 +226,12 @@ public final class SearchResultsActivity extends Activity {
         shell.addView(details,new LinearLayout.LayoutParams(0,-2,1f));
         shell.setOnFocusChangeListener((v,focus)->shell.setBackground(background(focus)));
         shell.setOnClickListener(v->{
-            if(UnifiedSearch.open(this,result)){
+            UnifiedSearch.OpenOutcome outcome=UnifiedSearch.openWithOutcome(this,result);
+            if(outcome==UnifiedSearch.OpenOutcome.CARD){
                 FilmSelectionStore.rememberOpened(this,result);
+            } else if(outcome==UnifiedSearch.OpenOutcome.SEARCH){
+                Toast.makeText(this,"Открыт поиск, но переход к карточке не подтверждён.",
+                        Toast.LENGTH_LONG).show();
             } else {
                 new android.app.AlertDialog.Builder(this)
                     .setTitle("Переход к фильму не поддерживается")
