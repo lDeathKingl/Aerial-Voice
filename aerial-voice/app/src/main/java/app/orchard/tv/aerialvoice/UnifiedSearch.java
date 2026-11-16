@@ -262,8 +262,12 @@ public final class UnifiedSearch {
         return rows;
     }
 
+    public enum OpenOutcome { CARD, SEARCH, FAILED }
     public static boolean open(Context context, Row row) {
-        if (row == null) return false;
+        return openWithOutcome(context,row) != OpenOutcome.FAILED;
+    }
+    public static OpenOutcome openWithOutcome(Context context, Row row) {
+        if (row == null) return OpenOutcome.FAILED;
         if (row.data != null && !row.data.isEmpty()) {
             try {
                 Uri uri = Uri.parse(row.data);
@@ -274,7 +278,7 @@ public final class UnifiedSearch {
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     if (view.resolveActivity(context.getPackageManager()) != null) {
                         context.startActivity(view);
-                        return true;
+                        return OpenOutcome.CARD;
                     }
                 }
             } catch (RuntimeException error) { Log.w(TAG, "Unable to open search result", error); }
@@ -284,10 +288,10 @@ public final class UnifiedSearch {
                     .putExtra(SearchManager.QUERY, row.intentQuery)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             if (search.resolveActivity(context.getPackageManager()) != null) {
-                context.startActivity(search); return true;
+                context.startActivity(search); return OpenOutcome.SEARCH;
             }
         } catch (RuntimeException ignored) { }
-        return false;
+        return OpenOutcome.FAILED;
     }
 
     public static boolean openApp(Context context, String pkg) {
