@@ -41,7 +41,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private final GigaAmEngine gigaAmEngine;
-    private volatile String selectedAsr = AsrSelector.AUTO;
+    private volatile String selectedAsr = AsrSelector.GIGAAM;
     private volatile int selectedAudioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION;
     private volatile String lastAsrEngine = "ещё не использовался";
     private volatile long lastAsrMillis;
