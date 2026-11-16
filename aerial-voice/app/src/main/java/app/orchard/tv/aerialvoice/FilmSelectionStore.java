@@ -66,8 +66,12 @@ final class FilmSelectionStore {
                     o.optString("data",""),o.optString("icon",""),
                     o.optString("query",""),o.optString("year",""),
                     o.optString("rating",""),o.optString("genre",""));
-            if(!UnifiedSearch.open(ctx,row))return new CommandRouter.Result(true,
-                    "Кинотеатр не дал ссылку для открытия этой карточки. Выбери её в приложении.");
+            UnifiedSearch.OpenOutcome outcome=UnifiedSearch.openWithOutcome(ctx,row);
+            if(outcome==UnifiedSearch.OpenOutcome.FAILED)
+                return new CommandRouter.Result(true,"Кинотеатр не дал ссылку для открытия этой карточки. Выбери её в приложении.");
+            if(outcome==UnifiedSearch.OpenOutcome.SEARCH)
+                return new CommandRouter.Result(true,"Открыл поиск «"+row.title+
+                        "» в "+row.source+", но карточка фильма не подтверждена.",true);
             rememberOpened(ctx,row);
             return new CommandRouter.Result(true,"Открываю карточку «"+row.title+
                     "» в "+row.source+". Воспроизведение не подтверждено.",true);
