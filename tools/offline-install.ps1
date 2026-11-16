@@ -91,7 +91,6 @@ if ($manifest.format -ne "AerialVoice-offline-model-cache-v1") {
 }
 
 $expected = @(
-  "vosk/vosk-model-small-ru-0.22.zip",
   "gigaam-v3/model.int8.onnx",
   "gigaam-v3/tokens.txt"
 )
@@ -153,7 +152,7 @@ if ($usageResult.ExitCode -ne 0) {
 }
 
 $remote = "/sdcard/Android/data/$Package/files/offline-models"
-Invoke-Adb -Arguments @("-s", $Tv, "shell", "mkdir", "-p", "$remote/vosk", "$remote/gigaam-v3")
+Invoke-Adb -Arguments @("-s", $Tv, "shell", "mkdir", "-p", "$remote/gigaam-v3")
 
 Write-Host "Copying or verifying offline speech models..." -ForegroundColor Cyan
 foreach ($relative in $expected) {
