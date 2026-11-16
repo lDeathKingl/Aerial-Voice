@@ -34,6 +34,7 @@ import java.util.concurrent.Executors;
 public final class SearchResultsActivity extends Activity {
     public static final String EXTRA_QUERY = "search_query";
     public static final String EXTRA_ZONA_ONLY = "zona_only";
+    public static final String EXTRA_AUTO_OPEN = "auto_open_unique";
     private static final int BG = Color.rgb(7,17,31);
     private static final int PANEL = Color.rgb(21,41,62);
     private static final int TEXT = Color.rgb(238,245,252);
@@ -128,7 +129,16 @@ public final class SearchResultsActivity extends Activity {
 
     private void render(String query, UnifiedSearch.Results result){
         int total=result.rows.size();
-        status.setText(total>0?"Найдено "+total+" результатов. Выбери карточку кнопкой OK."
+        FilmSelectionStore.saveResults(this,query,result.rows);
+        if(getIntent().getBooleanExtra(EXTRA_AUTO_OPEN,false) && total==1){
+            UnifiedSearch.Row only=result.rows.get(0);
+            if(UnifiedSearch.open(this,only)){
+                FilmSelectionStore.rememberOpened(this,only);
+                finish();
+                return;
+            }
+        }
+        status.setText(total>0?"Найдено "+total+" результатов. Выбери карточку кнопкой OK или скажи: открой первый результат."
                 :"Карточки не получены. Попробуй открыть поиск в установленном приложении.");
         int shown=Math.min(48,total);
         for(int i=0;i<shown;i+=2){
@@ -192,6 +202,21 @@ public final class SearchResultsActivity extends Activity {
         TextView name=text(result.title,19,TEXT,true);
         name.setMaxLines(2);
         details.addView(name);
+        StringBuilder facts=new StringBuilder();
+        if(result.year!=null&&!result.year.isEmpty())facts.append(result.year);
+        if(result.rating!=null&&!result.rating.isEmpty()){
+            if(facts.length()>0)facts.append(" · ");
+            facts.append("Рейтинг: ").append(result.rating);
+        }
+        if(result.genre!=null&&!result.genre.isEmpty()){
+            if(facts.length()>0)facts.append(" · ");
+            facts.append(result.genre);
+        }
+        if(facts.length()>0){
+            TextView attrs=text(facts.toString(),13,Color.rgb(237,204,124),false);
+            attrs.setMaxLines(2);
+            details.addView(attrs);
+        }
         if(result.subtitle!=null&&!result.subtitle.isEmpty()){
             TextView secondary=text(result.subtitle,14,MUTED,false);
             secondary.setMaxLines(3);
@@ -201,7 +226,9 @@ public final class SearchResultsActivity extends Activity {
         shell.addView(details,new LinearLayout.LayoutParams(0,-2,1f));
         shell.setOnFocusChangeListener((v,focus)->shell.setBackground(background(focus)));
         shell.setOnClickListener(v->{
-            if(!UnifiedSearch.open(this,result)){
+            if(UnifiedSearch.open(this,result)){
+                FilmSelectionStore.rememberOpened(this,result);
+            } else {
                 new android.app.AlertDialog.Builder(this)
                     .setTitle("Переход к фильму не поддерживается")
                     .setMessage("Источник «"+result.source+"» вернул карточку, но не предоставил доступный Android Intent для её открытия.")
