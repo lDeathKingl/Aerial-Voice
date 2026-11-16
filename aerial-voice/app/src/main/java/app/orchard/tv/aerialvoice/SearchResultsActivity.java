@@ -99,7 +99,7 @@ public final class SearchResultsActivity extends Activity {
         scroller.addView(cards);
         frame.addView(scroller,new LinearLayout.LayoutParams(-1,0,1f));
         Button back=new Button(this);
-        back.setText("← Вернуться в Aerial Voice");
+        back.setText("← Вернуться к предыдущему экрану");
         back.setAllCaps(false);
         back.setOnClickListener(v->finish());
         frame.addView(back);
