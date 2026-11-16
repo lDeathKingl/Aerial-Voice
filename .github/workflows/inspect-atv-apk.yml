@@ -1,0 +1,45 @@
+name: Research ATV Search APK (read-only inspection)
+on:
+  push:
+    branches:
+      - research/atv-apk-inspection-2026-11
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Inspect developer download page to find original APK URL
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re, urllib.request, urllib.parse, html
+          from html.parser import HTMLParser
+          class Links(HTMLParser):
+              def __init__(self):
+                  super().__init__(); self.tags=[]
+              def handle_starttag(self, tag, attrs):
+                  attrs=dict(attrs)
+                  if tag in ('a','button','script','iframe'):
+                      self.tags.append((tag,attrs))
+          for base in ('https://www.slavenja.ru/','https://slavenja.ru/'):
+              req=urllib.request.Request(base,headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36','Accept':'text/html'})
+              try:
+                  with urllib.request.urlopen(req,timeout=25) as resp:
+                      page=resp.read().decode('utf-8',errors='replace')
+                      print('PAGE',base,'status',resp.status,'bytes',len(page),'resolved_url',resp.url)
+              except Exception as err:
+                  print('ERROR FETCHING',base,type(err).__name__,str(err)[:240]);continue
+              parser=Links();parser.feed(page)
+              for tag,attrs in parser.tags:
+                  blob=str(attrs)
+                  if re.search(r'apk|download|скач|\.zip|\.php|atv',blob,re.I):
+                      print('TAG',tag,blob[:900])
+              matches=list(re.finditer(r'\.apk|download|скачать|1718816|atv(?:-ru)?(?:search)?',page,re.I))
+              for m in matches[:45]:
+                  start=max(0,m.start()-180); end=min(len(page),m.end()+250)
+                  print('CONTEXT',html.unescape(page[start:end].replace('\n',' '))[:500])
+              print('TOTAL_REFERENCES',len(matches))
+          PY
