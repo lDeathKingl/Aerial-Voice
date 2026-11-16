@@ -13,7 +13,8 @@ public final class AerialRecognitionService extends RecognitionService implement
     private Callback current;
     @Override protected synchronized void onStartListening(Intent intent, Callback callback) {
         if (current != null) {
-            callback.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY);
+            try { callback.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY); }
+            catch (android.os.RemoteException ignored) { }
             return;
         }
         current = callback;
