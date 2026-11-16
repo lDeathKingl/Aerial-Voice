@@ -84,6 +84,15 @@
         </activity>
 
         <activity
+            android:name=".FloatingVoiceActivity"
+            android:exported="false"
+            android:theme="@style/AerialVoiceFloatingTheme"
+            android:launchMode="singleTop"
+            android:taskAffinity="app.orchard.tv.aerialvoice.overlay"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".SearchResultsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
