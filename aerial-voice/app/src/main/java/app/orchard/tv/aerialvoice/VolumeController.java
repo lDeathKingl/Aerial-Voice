@@ -48,7 +48,7 @@ public final class VolumeController {
                 next=audio.getStreamVolume(AudioManager.STREAM_MUSIC);
             }
             if(next==old)return "Громкость не изменилась. Возможно, телевизор управляет звуком вне Android.";
-            return "Громкость изменилась: "+pct(old,max)+"% → "+pct(next,max)+"%.";
+            return "Android показывает изменение громкости: "+pct(old,max)+"% → "+pct(next,max)+"%. Звук HDMI/CEC нужно проверить на слух.";
         }catch(RuntimeException error){
             Log.w(TAG,"Volume adjustment failed",error);
             return "Команда громкости отклонена Android: "+error.getClass().getSimpleName();
@@ -63,7 +63,7 @@ public final class VolumeController {
                     muted?AudioManager.ADJUST_MUTE:AudioManager.ADJUST_UNMUTE,
                     AudioManager.FLAG_SHOW_UI);
             return audio.isStreamMute(AudioManager.STREAM_MUSIC)==muted
-                    ? muted?"Звук выключен.":"Звук включён."
+                    ? muted?"Android сообщает, что звук выключен.":"Android сообщает, что звук включён."
                     : "Android не подтвердил изменение состояния звука.";
         }catch(RuntimeException e){return "Не удалось переключить звук: "+e.getClass().getSimpleName();}
     }
@@ -76,8 +76,8 @@ public final class VolumeController {
         }catch(RuntimeException e){return "Ошибка чтения "+e.getClass().getSimpleName();}
     }
     static String describe(int before,int after,int max,int requested,int goal){
-        if(after==goal)return "Громкость установлена: "+pct(after,max)+"% (запрос "+requested+"%).";
-        if(after!=before)return "Android изменил громкость до "+pct(after,max)+"%, а не до "+requested+"%.";
+        if(after==goal)return "Android показывает громкость "+pct(after,max)+"% (запрос "+requested+"%). Фактический звук HDMI/CEC не подтверждён.";
+        if(after!=before)return "По данным Android громкость "+pct(after,max)+"%, а не "+requested+"%. Фактический звук HDMI/CEC не подтверждён.";
         return "Громкость НЕ изменилась (осталась "+pct(after,max)+"%). Прошивка, возможно, управляет звуком отдельно.";
     }
     static int pct(int value,int max){return max<=0?0:Math.round(100f*value/max);}
