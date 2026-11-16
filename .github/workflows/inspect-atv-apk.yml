@@ -121,6 +121,40 @@ jobs:
                       print('TRUNCATED_CATEGORY',key);break
               print('TOTAL_MATCHES_AT_LEAST',hits)
           PY
+      - name: Investigate Zona interoperability and Xiaomi microphone routing
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          root=Path('atv-report/decompiled/sources')
+          targets={
+           'com/tvvoicesearch/app/VoiceSearchActivity.java':[
+             (1190,1235), (2540,2585), (4150,4210),(19460,19550),(19760,19840),(5134,5174),(54740,54775),(57100,57135)
+           ],
+           'defpackage/g91.java':[(220,322)],
+           'defpackage/gw.java':[(50,112)],
+           'defpackage/v2.java':[(35,124)],
+           'com/tvvoicesearch/app/SearchKeyAccessibilityService.java':[(1,240)],
+           'com/tvvoicesearch/app/VoiceSearchInteractionService.java':[(1,165)],
+           'com/tvvoicesearch/app/VoiceSearchSessionService.java':[(1,175)],
+           'com/tvvoicesearch/app/WhaleVoiceKeyReceiver.java':[(1,165)],
+           'com/tvvoicesearch/app/BootCompletedReceiver.java':[(1,130)],
+           'defpackage/p11.java':[(1,135)]
+          }
+          for filename,ranges in targets.items():
+              f=root/filename
+              if not f.exists():
+                  print('MISSING_FILE',filename);continue
+              lines=f.read_text('utf-8','ignore').splitlines()
+              print('==== FILE',filename,'LINES',len(lines),'====')
+              for a,b in ranges:
+                  print('---- RANGE',a,b,'----')
+                  for n in range(a,min(b,len(lines))+1):
+                      l=lines[n-1]
+                      # Keep output bounded and relevant to integrations.
+                      print(f'{n:6d}',l[:500])
+          PY
       - name: Save summary, no third-party APK or decompiled source in artifact
         if: always()
         uses: actions/upload-artifact@v4
