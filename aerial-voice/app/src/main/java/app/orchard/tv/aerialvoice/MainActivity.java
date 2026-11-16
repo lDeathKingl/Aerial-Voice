@@ -1137,6 +1137,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         out.append("Audio source: VOICE_RECOGNITION -> RC In / MIBT.VoiceControl\n");
         out.append("TTS diagnostics: ").append(speech == null ? "not initialized" : speech.getTtsDiagnostics()).append("\n\n");
         out.append("F5 bridge: requires the small HomeGuard patch in Aerial Korobovo.\n\n");
+        out.append("Zona: ").append(ZonaSearch.diagnostics(this)).append("\n\n");
         out.append("Audio input devices:\n");
         AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (audio != null) {
