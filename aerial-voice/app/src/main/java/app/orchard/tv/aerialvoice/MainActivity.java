@@ -110,6 +110,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         speech.setAudioSource(getSharedPreferences(PREFS, MODE_PRIVATE).getInt(
                 "asr_audio_source", MediaRecorder.AudioSource.VOICE_RECOGNITION));
         speech.setTtsVoice(getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_voice", ""));
+        speech.setSilenceTimeoutMs(getSharedPreferences(PREFS, MODE_PRIVATE).getLong("silence_timeout_ms", 1350L));
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("asr_engine").apply();
         String bootstrapStatus = importBootstrapKey();
         String historyStatus = importBootstrapHistory();
@@ -826,6 +827,21 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         sourcePicker.setAdapter(sourceAdapter);
         sourcePicker.setSelection(speech.getAudioSource() == MediaRecorder.AudioSource.MIC ? 1 : 0);
         form.addView(sourcePicker);
+        form.addView(label("Автоматическая отправка фразы после паузы"));
+        Spinner pausePicker=new Spinner(this);
+        String[] pauseLabels={"0,9 секунды (быстро)", "1,35 секунды (стандарт)", "1,8 секунды", "2,5 секунды (не спешить)"};
+        long[] pauses={900L,1350L,1800L,2500L};
+        ArrayAdapter<String> pauseAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,pauseLabels);
+        pauseAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        pausePicker.setAdapter(pauseAdapter);
+        long configured=speech.getSilenceTimeoutMs();
+        int selectedPause=1, bestDiff=Integer.MAX_VALUE;
+        for(int i=0;i<pauses.length;i++){
+            int diff=(int)Math.abs(pauses[i]-configured);
+            if(diff<bestDiff){bestDiff=diff;selectedPause=i;}
+        }
+        pausePicker.setSelection(selectedPause);
+        form.addView(pausePicker);
         TextView detail = text(speech.getAsrDiagnostics()
                 + "\n\nЕсли микрофон пульта недоступен, проверь «Тест микрофона». "
                 + "Приложение не переключается молча на микрофон телевизора.", 14, MUTED, false);
@@ -841,6 +857,9 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                             .remove("asr_engine")
                             .putInt("asr_audio_source", source).apply();
                     speech.setAudioSource(source);
+                    long pause=pauses[pausePicker.getSelectedItemPosition()];
+                    speech.setSilenceTimeoutMs(pause);
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong("silence_timeout_ms",pause).apply();
                     refreshDiagnostics();
                     setStatus("Аудиоисточник сохранён для следующей записи.", GREEN);
                 })
