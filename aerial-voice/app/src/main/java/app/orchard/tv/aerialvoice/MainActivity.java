@@ -101,6 +101,13 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // Existing HomeGuard launches MainActivity by explicit component. Relay F5 into
+        // the small translucent window rather than taking over the cinema full screen.
+        if (isExternalVoiceIntent(getIntent())) {
+            forwardFloatingVoice(getIntent());
+            finish();
+            return;
+        }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
@@ -254,7 +261,41 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (isExternalVoiceIntent(intent)) {
+            forwardFloatingVoice(intent);
+            return;
+        }
         handleLaunchIntent(intent);
+    }
+
+    private static boolean isExternalVoiceIntent(Intent intent) {
+        if (intent == null) return false;
+        String action=intent.getAction();
+        return Intent.ACTION_ASSIST.equals(action) ||
+                Intent.ACTION_VOICE_COMMAND.equals(action) ||
+                Intent.ACTION_SEARCH_LONG_PRESS.equals(action) ||
+                intent.getBooleanExtra(EXTRA_START_LISTENING,false) ||
+                intent.getBooleanExtra(EXTRA_STOP_LISTENING,false);
+    }
+
+    private void forwardFloatingVoice(Intent incoming) {
+        try {
+            Intent overlay=new Intent(this,FloatingVoiceActivity.class);
+            overlay.setAction(incoming.getAction());
+            overlay.putExtra(FloatingVoiceActivity.EXTRA_START,
+                    incoming.getBooleanExtra(EXTRA_START_LISTENING,false));
+            overlay.putExtra(FloatingVoiceActivity.EXTRA_STOP,
+                    incoming.getBooleanExtra(EXTRA_STOP_LISTENING,false));
+            overlay.putExtra(FloatingVoiceActivity.EXTRA_PTT_BRIDGE,true);
+            if(incoming.getBooleanExtra(EXTRA_SET_CONTINUOUS,false))
+                overlay.putExtra(FloatingVoiceActivity.EXTRA_DIALOGUE,
+                        incoming.getBooleanExtra(EXTRA_CONTINUOUS,false));
+            overlay.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(overlay);
+        } catch (Exception error) {
+            Log.e("AerialVoice","HomeGuard voice overlay could not start",error);
+        }
     }
 
     private void handleLaunchIntent(Intent intent) {
@@ -370,6 +411,16 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         addWeighted(secondaryActions, clearChat);
         addWeighted(secondaryActions, aiTest);
         content.addView(secondaryActions);
+
+        Button overlayButton=button("Компактный голос поверх ТВ",false);
+        overlayButton.setOnClickListener(v->{
+            Intent overlay=new Intent(this,FloatingVoiceActivity.class);
+            overlay.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(overlay);
+        });
+        LinearLayout.LayoutParams overlayLp=new LinearLayout.LayoutParams(-1,dp(50));
+        overlayLp.bottomMargin=dp(10);
+        content.addView(overlayButton,overlayLp);
 
         Button movieSearch = button("ПОИСК ФИЛЬМОВ · Zona / Lampa / Кинопоиск", true);
         movieSearch.setOnClickListener(v -> startActivity(new Intent(this, SearchResultsActivity.class)));
@@ -756,35 +807,17 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     }
 
     private void loadHistory() {
-        try {
-            String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(HISTORY_KEY, "");
-            if (saved == null || saved.isEmpty()) return;
-            JSONArray stored = new JSONArray(saved);
-            for (int i = Math.max(0, stored.length() - MAX_HISTORY_MESSAGES); i < stored.length(); i++) {
-                JSONObject item = stored.optJSONObject(i);
-                if (item == null) continue;
-                String role = item.optString("role", "");
-                String content = item.optString("content", "").trim();
-                if (("user".equals(role) || "assistant".equals(role)) && !content.isEmpty()) {
-                    history.put(new JSONObject().put("role", role).put("content", content));
-                }
-            }
-        } catch (Exception ignored) {
-            while (history.length() > 0) history.remove(0);
+        JSONArray latest=SharedConversationHistory.load(this);
+        while (history.length() > 0) history.remove(0);
+        for (int i=0;i<latest.length();i++) {
+            JSONObject item=latest.optJSONObject(i);
+            if(item!=null)history.put(item);
         }
     }
 
-    private void saveHistory() {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(HISTORY_KEY, history.toString()).apply();
-    }
-
     private void addHistory(String role, String content) {
-        try {
-            history.put(new JSONObject().put("role", role).put("content", content)
-                    .put("timestamp", System.currentTimeMillis()));
-            while (history.length() > MAX_HISTORY_MESSAGES) history.remove(0);
-            saveHistory();
-        } catch (Exception ignored) { }
+        SharedConversationHistory.append(this,role,content);
+        loadHistory();
     }
 
     private void clearHistory() {
@@ -1407,6 +1440,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     @Override
     protected void onResume() {
         super.onResume();
+        loadHistory(); // Import messages added in the small voice window.
         updateFeatureButtons();
         refreshDiagnostics();
     }
@@ -1417,7 +1451,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         pendingRemoteStart = false;
         pendingRemoteStop = false;
         stopRemoteMicTest();
-        saveHistory();
+        // Every message is already persisted. Do not overwrite overlay history
+        // with a stale in-memory snapshot when MainActivity is destroyed.
         if (speech != null) speech.destroy();
         super.onDestroy();
     }
