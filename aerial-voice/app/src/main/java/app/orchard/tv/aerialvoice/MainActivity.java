@@ -78,7 +78,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
     private final Runnable pendingRemoteStartRunnable = () -> {
         if (!pendingRemoteStart) return;
         pendingRemoteStart = false;
-        startListening(false);
+        startListening(true);
         if (pendingRemoteStop) {
             pendingRemoteStop = false;
             if (speech != null) speech.stopListening();
@@ -110,6 +110,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         speech.setAudioSource(getSharedPreferences(PREFS, MODE_PRIVATE).getInt(
                 "asr_audio_source", MediaRecorder.AudioSource.VOICE_RECOGNITION));
         speech.setTtsVoice(getSharedPreferences(PREFS, MODE_PRIVATE).getString("tts_voice", ""));
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("asr_engine").apply();
         String bootstrapStatus = importBootstrapKey();
         String historyStatus = importBootstrapHistory();
         applyVoiceSettings();
@@ -257,6 +258,14 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
 
     private void handleLaunchIntent(Intent intent) {
         if (intent == null) return;
+        if (Intent.ACTION_ASSIST.equals(intent.getAction()) ||
+                Intent.ACTION_VOICE_COMMAND.equals(intent.getAction()) ||
+                Intent.ACTION_SEARCH_LONG_PRESS.equals(intent.getAction())) {
+            handler.post(() -> {
+                if (speech != null && !speech.isListening()) startListening(true);
+            });
+            return;
+        }
         if (intent.getBooleanExtra(EXTRA_SET_CONTINUOUS, false)) {
             continuousMode = intent.getBooleanExtra(EXTRA_CONTINUOUS, false);
             updateFeatureButtons();
@@ -298,7 +307,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("AERIAL VOICE · 0.6.4", 13, MUTED, true);
+        TextView version = text("AERIAL VOICE · 0.9.0", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -327,7 +336,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 speech.stopListening();
             } else {
                 continuousMode = false;
-                startListening();
+                startListening(true);
             }
         });
         hero.addView(listenButton, new LinearLayout.LayoutParams(-1, dp(62)));
@@ -360,6 +369,12 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         addWeighted(secondaryActions, clearChat);
         addWeighted(secondaryActions, aiTest);
         content.addView(secondaryActions);
+
+        Button movieSearch = button("ПОИСК ФИЛЬМОВ · Zona / Lampa / Кинопоиск", true);
+        movieSearch.setOnClickListener(v -> startActivity(new Intent(this, SearchResultsActivity.class)));
+        LinearLayout.LayoutParams movieLp = new LinearLayout.LayoutParams(-1, dp(56));
+        movieLp.bottomMargin = dp(12);
+        content.addView(movieSearch, movieLp);
 
         LinearLayout featureActions = new LinearLayout(this);
         featureActions.setOrientation(LinearLayout.HORIZONTAL);
@@ -728,7 +743,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         setStatus(message, Color.rgb(251, 146, 60));
         setAnswer(message + " Если проблема повторяется, открой диагностику и проверь RC In.");
         if (continuousMode) {
-            setStatus("Ошибка распознавания. Для следующей фразы удерживай F5; свободное прослушивание будет проверено после следующего ответа.", Color.rgb(251, 146, 60));
+            setStatus("Микрофон недоступен или не подтвердил речь. Для следующей фразы удерживай F5.", Color.rgb(251, 146, 60));
         }
         refreshDiagnostics();
     }
@@ -1349,7 +1364,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
                 remotePttActive = true;
                 handler.removeCallbacks(activityF5Long);
                 if (!continuousMode) handler.postDelayed(activityF5Long, 650L);
-                startListening();
+                startListening(true);
                 return true;
             }
             if (event.getAction() == KeyEvent.ACTION_UP) {
