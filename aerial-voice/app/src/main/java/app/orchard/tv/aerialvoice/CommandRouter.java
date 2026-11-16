@@ -83,37 +83,18 @@ public final class CommandRouter {
             int percent;
             try { percent = Integer.parseInt(volumeMatch.group(1)); }
             catch (NumberFormatException e) { percent = -1; }
-            if (percent >= 0 && percent <= 100) {
-                AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-                if (audio != null) {
-                    int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                    int target = Math.round(max * percent / 100.0f);
-                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI);
-                    return new Result(true, "Устанавливаю громкость на " + percent + " процентов.");
-                }
-            }
+            if (percent >= 0 && percent <= 100)
+                return new Result(true, VolumeController.setPercent(context,percent));
         }
+        if (containsAny(q, "громче", "увеличь громкость", "прибавь звук"))
+            return new Result(true, VolumeController.step(context,true));
+        if (containsAny(q, "тише", "уменьши громкость", "убавь звук"))
+            return new Result(true, VolumeController.step(context,false));
+        if (containsAny(q, "выключи звук", "без звука", "отключи звук"))
+            return new Result(true, VolumeController.mute(context,true));
+        if (containsAny(q, "включи звук", "верни звук", "со звуком"))
+            return new Result(true, VolumeController.mute(context,false));
 
-        if (containsAny(q, "громче", "увеличь громкость", "прибавь звук")) {
-            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            if (audio != null) audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
-            return new Result(true, "Делаю громче.");
-        }
-        if (containsAny(q, "тише", "уменьши громкость", "убавь звук")) {
-            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            if (audio != null) audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
-            return new Result(true, "Делаю тише.");
-        }
-        if (containsAny(q, "выключи звук", "без звука", "отключи звук")) {
-            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            if (audio != null && android.os.Build.VERSION.SDK_INT >= 23) audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, AudioManager.FLAG_SHOW_UI);
-            return new Result(true, "Звук выключен.");
-        }
-        if (containsAny(q, "включи звук", "верни звук", "со звуком")) {
-            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            if (audio != null && android.os.Build.VERSION.SDK_INT >= 23) audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI);
-            return new Result(true, "Звук включён.");
-        }
         // Phrases such as "найди в Зоне фильм Дюна" or "найди Дюну в Zona".
         Matcher zonaFirst = Pattern.compile(
                 "^(?:найди|поищи|покажи|поиск)\\s+(?:в\\s+)?(?:зоне|zona)\\s+(?:фильм\\s+|сериал\\s+)?(.+)$")
