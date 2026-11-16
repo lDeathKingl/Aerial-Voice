@@ -312,4 +312,4 @@ if ($historyStaged) {
 
 Write-Host ""
 Write-Host "Aerial Voice installation finished." -ForegroundColor Green
-Write-Host "The old Aerial Voice 0.5.2 app was not uninstalled." -ForegroundColor Green
+Write-Host "No existing Aerial Voice application was intentionally uninstalled." -ForegroundColor Green
