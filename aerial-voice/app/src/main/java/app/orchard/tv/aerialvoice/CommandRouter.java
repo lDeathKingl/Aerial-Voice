@@ -19,7 +19,15 @@ public final class CommandRouter {
     public static final class Result {
         public final boolean handled;
         public final String message;
-        public Result(boolean handled, String message) { this.handled = handled; this.message = message; }
+        public final boolean leavesAssistant;
+        public Result(boolean handled, String message) {
+            this(handled, message, false);
+        }
+        public Result(boolean handled, String message, boolean leavesAssistant) {
+            this.handled = handled;
+            this.message = message;
+            this.leavesAssistant = leavesAssistant;
+        }
     }
 
     private static final Map<String, String> APPS = new LinkedHashMap<>();
@@ -133,14 +141,14 @@ public final class CommandRouter {
         if (hdmi.find()) {
             String input = "hdmi" + hdmi.group(1);
             if (context instanceof Activity && TvInputController.openByQuery((Activity) context, input)) {
-                return new Result(true, "Переключаю на " + hdmi.group(0).replace("переключи", "").trim() + ".");
+                return new Result(true, "Переключаю на " + hdmi.group(0).replace("переключи", "").trim() + ".", true);
             }
             return new Result(true, "Не нашёл такой HDMI-вход среди источников, которые Android TV предоставляет приложениям.");
         }
         if (containsAny(q, "переключи источник", "открой источники", "покажи источники", "выбери источник", "список входов", "hdmi", "хдми")) {
             if (context instanceof Activity) {
                 TvInputController.showPicker((Activity) context);
-                return new Result(true, "Открываю список доступных HDMI и TV-входов.");
+                return new Result(true, "Открываю список доступных HDMI и TV-входов.", true);
             }
             return new Result(true, "Выбор источника доступен только на экране Aerial Voice.");
         }
@@ -172,7 +180,7 @@ public final class CommandRouter {
         if (containsAny(q, "домой", "на главный экран", "главный экран")) {
             Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try { context.startActivity(home); } catch (Exception ignored) { }
-            return new Result(true, "Открываю главный экран.");
+            return new Result(true, "Открываю главный экран.", true);
         }
         if (containsAny(q, "назад", "вернись назад", "вернуться назад")) {
             return new Result(true, "Нажми кнопку Back на пульте — глобальный Back без отдельного системного разрешения недоступен.");
@@ -181,7 +189,7 @@ public final class CommandRouter {
             try {
                 Intent settings = new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 context.startActivity(settings);
-                return new Result(true, "Открываю настройки.");
+                return new Result(true, "Открываю настройки.", true);
             } catch (ActivityNotFoundException e) {
                 return new Result(true, "На телевизоре не найден экран настроек Android.");
             }
@@ -199,7 +207,7 @@ public final class CommandRouter {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
                 context.startActivity(launch);
-                return new Result(true, "Открываю " + appKey + ".");
+                return new Result(true, "Открываю " + appKey + ".", true);
             } catch (Exception e) {
                 return new Result(true, "Не удалось открыть " + appKey + ".");
             }
@@ -209,7 +217,7 @@ public final class CommandRouter {
 
     private static Result searchFilm(Context context, String title, boolean onlyZona) {
         ZonaSearch.Result searched = ZonaSearch.search(context, title, onlyZona);
-        return new Result(true, searched.message);
+        return new Result(true, searched.message, searched.opened);
     }
 
     private static void dispatchMedia(Context context, int code) {
