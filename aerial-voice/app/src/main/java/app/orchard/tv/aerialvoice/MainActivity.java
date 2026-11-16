@@ -632,7 +632,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
             setAnswer(local.message);
             addHistory("assistant", local.message);
             speech.speak(local.message);
-            if (local.message.startsWith("Открываю ")) {
+            if (local.leavesAssistant) {
                 continuousMode = false;
                 handler.removeCallbacks(autoListenRunnable);
                 updateFeatureButtons();
