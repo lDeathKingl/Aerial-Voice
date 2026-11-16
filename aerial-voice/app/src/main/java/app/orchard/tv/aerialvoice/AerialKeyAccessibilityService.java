@@ -32,10 +32,10 @@ public final class AerialKeyAccessibilityService extends AccessibilityService {
     }
     private void send(boolean down){
         try {
-            Intent intent=new Intent(this,MainActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            intent.putExtra(down?"app.orchard.tv.aerialvoice.START_LISTENING":
-                    "app.orchard.tv.aerialvoice.STOP_LISTENING",true);
+            Intent intent=new Intent(this,FloatingVoiceActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            intent.putExtra(down?FloatingVoiceActivity.EXTRA_START:FloatingVoiceActivity.EXTRA_STOP,true);
+            intent.putExtra(FloatingVoiceActivity.EXTRA_PTT_BRIDGE,true);
             startActivity(intent);
         }catch(RuntimeException error){
             Log.w(TAG,"Global key not delivered; ROM may intercept",error);
