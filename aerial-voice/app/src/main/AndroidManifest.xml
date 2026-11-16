@@ -23,6 +23,15 @@
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <package android:name="mobi.zona" />
+        <package android:name="free.zona" />
+        <package android:name="ru.zona" />
+        <package android:name="com.lazycatsoftware.lmd" />
+        <package android:name="top.rootu.lumpa" />
+        <package android:name="top.rootu.prisma" />
+        <package android:name="com.skaz.lampa" />
+        <intent>
+            <action android:name="android.intent.action.SEARCH" />
+        </intent>
         <package android:name="ru.yourok.torrserve" />
         <package android:name="top.rootu.lampa" />
         <package android:name="ru.iptvremote.android.iptv.pro" />
@@ -64,7 +73,56 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SearchResultsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <service
+            android:name=".AerialVoiceInteractionService"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data android:name="android.voice_interaction"
+                android:resource="@xml/aerial_voice_interaction" />
+        </service>
+        <service
+            android:name=".AerialVoiceSessionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true" />
+        <service
+            android:name=".AerialRecognitionService"
+            android:permission="android.permission.BIND_SPEECH_RECOGNIZER"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".AerialKeyAccessibilityService"
+            android:exported="true"
+            android:label="@string/voice_key_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice"
+                android:resource="@xml/aerial_voice_key_accessibility" />
+        </service>
 
         <activity
             android:name=".TvInputActivity"
