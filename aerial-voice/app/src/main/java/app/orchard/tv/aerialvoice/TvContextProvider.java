@@ -18,12 +18,14 @@ public final class TvContextProvider {
     public static String snapshot(Context context) {
         String app = foregroundApp(context);
         String media = MediaSessionBridge.currentMedia(context);
-        if (app.isEmpty() && media.isEmpty()) {
+        String selectedFilm = FilmSelectionStore.currentFilmContext(context);
+        if (app.isEmpty() && media.isEmpty() && selectedFilm.isEmpty()) {
             return "Текущее приложение и медиаинформация не определены. Не утверждай, что знаешь, что сейчас открыто на телевизоре.";
         }
         StringBuilder out = new StringBuilder();
         if (!app.isEmpty()) out.append("Последнее активное приложение телевизора: ").append(app).append(". ");
         if (!media.isEmpty()) out.append(media).append(". ");
+        if (!selectedFilm.isEmpty()) out.append(selectedFilm).append(". ");
         out.append("Это снимок системного контекста, он может отставать от текущего экрана. Если пользователь говорит о другом приложении или фильме, уточни.");
         return out.toString().trim();
     }
