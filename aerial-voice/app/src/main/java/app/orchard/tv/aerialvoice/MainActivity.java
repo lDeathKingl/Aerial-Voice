@@ -349,7 +349,7 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(brand, new LinearLayout.LayoutParams(-2, -2));
         header.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        TextView version = text("AERIAL VOICE · 0.9.0", 13, MUTED, true);
+        TextView version = text("AERIAL VOICE · 0.9.1", 13, MUTED, true);
         version.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(version, new LinearLayout.LayoutParams(0, -1, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -1206,6 +1206,8 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         out.append("F5 bridge: HomeGuard Aerial Korobovo or opt-in AerialKeyAccessibilityService.\n");
         out.append("Accessibility service is NOT enabled automatically.\n\n");
         out.append("Zona: ").append(ZonaSearch.diagnostics(this)).append("\n\n");
+        out.append("Последняя карточка фильма: ").append(FilmSelectionStore.currentFilmContext(this)).append("\n\n");
+        out.append("Глобальный голос: компактная Activity; F5 через HomeGuard или добровольно включённый Accessibility.\n\n");
         out.append("Volume: ").append(VolumeController.diagnostics(this)).append("\n\n");
         java.util.List<UnifiedSearch.Provider> providers = UnifiedSearch.discover(this, false);
         out.append("Cinema search providers: ").append(providers.size()).append('\n');
