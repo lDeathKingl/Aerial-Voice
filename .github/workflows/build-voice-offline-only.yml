@@ -7,6 +7,7 @@ on:
       - feature/offline-asr-0.6.2
       - feature/stability-0.6.3
       - feature/pre-tv-0.6.4
+      - feature/gigaam-dialogue-zona-0.8.1
 
 permissions:
   contents: read
@@ -85,28 +86,23 @@ jobs:
       - name: Build Aerial Voice variants and tests
         working-directory: aerial-voice
         run: gradle --no-daemon clean :app:testMicTestDebugUnitTest :app:assembleFullDebug :app:assembleMicTestDebug
-      - name: Download both offline Russian ASR models
+      - name: Download and verify offline GigaAM v3
         run: |
           set -euo pipefail
-          mkdir -p dist/offline-models/vosk dist/offline-models/gigaam-v3
+          mkdir -p dist/offline-models/gigaam-v3
           curl --fail --location --retry 4 --retry-delay 4 "https://huggingface.co/nocmt/GigaAM-v3-E2E-CTC-int8-ONNX/resolve/main/model.int8.onnx" -o dist/offline-models/gigaam-v3/model.int8.onnx
           curl --fail --location --retry 4 --retry-delay 4 "https://huggingface.co/nocmt/GigaAM-v3-E2E-CTC-int8-ONNX/resolve/main/tokens.txt" -o dist/offline-models/gigaam-v3/tokens.txt
           echo "784d77aaa7a0899a247e72c71d667792087ee4dec985db1f57961767a5f6014f  dist/offline-models/gigaam-v3/model.int8.onnx" | sha256sum -c -
           echo "142de7570b3de5b3035ce111a89c228e80e6085273731d944093ddf24fa539cd  dist/offline-models/gigaam-v3/tokens.txt" | sha256sum -c -
-          curl --fail --location --retry 4 --retry-delay 4 "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" -o dist/offline-models/vosk/vosk-model-small-ru-0.22.zip
           python3 - <<'PY'
-          import zipfile, hashlib, json
+          import hashlib, json
           from pathlib import Path
           root=Path('dist/offline-models')
-          with zipfile.ZipFile(root/'vosk/vosk-model-small-ru-0.22.zip') as z:
-              bad=z.testzip()
-              assert bad is None, f'Vosk ZIP corrupt entry: {bad}'
-              names=set(z.namelist())
-              assert all('vosk-model-small-ru-0.22/'+k in names for k in ('am/final.mdl','conf/mfcc.conf','graph/Gr.fst'))
           manifest={'format':'AerialVoice-offline-model-cache-v1','files':[]}
           for f in sorted(root.rglob('*')):
               if f.is_file() and f.name!='manifest.json':
                   manifest['files'].append({'path':f.relative_to(root).as_posix(),'bytes':f.stat().st_size,'sha256':hashlib.sha256(f.read_bytes()).hexdigest()})
+          assert len(manifest['files'])==2
           (root/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
           PY
       - name: Create finished offline package
@@ -117,13 +113,13 @@ jobs:
           cp tools/offline-install.ps1 tools/prepare-offline-models.ps1 tools/diagnose-offline.ps1 tools/INSTALL_OFFLINE.cmd dist/
           cp tools/README_OFFLINE_RU.md dist/README_OFFLINE_RU.md
           cd dist
-          zip -q -r -9 aerial-voice-0.6.4-offline-complete.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 diagnose-offline.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
-          unzip -tq aerial-voice-0.6.4-offline-complete.zip
-          rm aerial-voice-0.6.4-offline-complete.zip # Keep the artifact single-layer
+          zip -q -r -9 aerial-voice-0.8.1-gigaam-zona-offline.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 diagnose-offline.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
+          unzip -tq aerial-voice-0.8.1-gigaam-zona-offline.zip
+          rm aerial-voice-0.8.1-gigaam-zona-offline.zip # Keep the artifact single-layer
       - name: Upload complete offline ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-0.6.4-offline-complete
+          name: aerial-voice-0.8.1-gigaam-zona-offline
           path: dist/
           if-no-files-found: error
           retention-days: 30
