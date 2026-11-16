@@ -1,3 +1,13 @@
+## 0.9.0 — unified cinema search, optional global voice and reliable audio controls
+
+- Added real Android ContentProvider search for exported Zona and other cinema sources, plus dynamic SearchManager discovery.
+- Added TV search UI with results, optional poster preview, source labels and clickable Android result links.
+- Added guarded VoiceInteractionService, RecognitionService and opt-in Accessibility F5 key bridge, with Windows ADB setup/restore scripts.
+- Added read-back volume verification: no fake success when firmware ignores audio commands.
+- Added adaptive speech endpointing (0.9–2.5 sec silence), user configuration and JUnit regression tests.
+- Kept GigaAM v3, GigaChat, RHVoice, conversations, memory and installer signing cache.
+- CI success proves buildability, not the functionality of external Zona 3.0.79/Chinese Xiaomi firmware.
+
 ## 0.8.1 — GigaAM-only / Zona 3.0.79
 
 - Removed Vosk Android dependency, model manager, selector and installer payload. Migrates old ASR choices to GigaAM.
