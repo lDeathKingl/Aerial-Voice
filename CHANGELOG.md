@@ -1,3 +1,11 @@
+## 0.8.1 — GigaAM-only / Zona 3.0.79
+
+- Removed Vosk Android dependency, model manager, selector and installer payload. Migrates old ASR choices to GigaAM.
+- Added packaged offline GigaAM model verification and Windows no-uninstall installer.
+- Added voice film search commands prioritizing Zona, with package/version diagnostics and explicit fallback on unsupported ACTION_SEARCH.
+- Preserved GigaChat, conversation history, memory, TTS, F5 mic input and TV commands from the 0.6.4 branch.
+- Added CI compilation, unit tests and model checksum checks; real TV routing and Zona search require hardware verification.
+
 ## 0.6.1 — Stabilization
 
 - Fixed GigaChat token cache ownership by Authorization Key and supported both seconds/milliseconds OAuth expiry values.
