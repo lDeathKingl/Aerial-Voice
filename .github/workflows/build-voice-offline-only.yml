@@ -8,6 +8,7 @@ on:
       - feature/stability-0.6.3
       - feature/pre-tv-0.6.4
       - feature/gigaam-dialogue-zona-0.8.1
+      - feature/unified-search-voice-0.9.0
 
 permissions:
   contents: read
@@ -113,13 +114,13 @@ jobs:
           cp tools/offline-install.ps1 tools/prepare-offline-models.ps1 tools/diagnose-offline.ps1 tools/INSTALL_OFFLINE.cmd dist/
           cp tools/README_OFFLINE_RU.md dist/README_OFFLINE_RU.md
           cd dist
-          zip -q -r -9 aerial-voice-0.8.1-gigaam-zona-offline.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 diagnose-offline.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
-          unzip -tq aerial-voice-0.8.1-gigaam-zona-offline.zip
-          rm aerial-voice-0.8.1-gigaam-zona-offline.zip # Keep the artifact single-layer
+          zip -q -r -9 aerial-voice-0.9.0-unified-search-offline.zip offline-models aerial-voice-full-debug.apk aerial-voice-mictest06-debug.apk offline-install.ps1 prepare-offline-models.ps1 diagnose-offline.ps1 INSTALL_OFFLINE.cmd README_OFFLINE_RU.md
+          unzip -tq aerial-voice-0.9.0-unified-search-offline.zip
+          rm aerial-voice-0.9.0-unified-search-offline.zip # Keep the artifact single-layer
       - name: Upload complete offline ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: aerial-voice-0.8.1-gigaam-zona-offline
+          name: aerial-voice-0.9.0-unified-search-offline
           path: dist/
           if-no-files-found: error
           retention-days: 30
