@@ -49,11 +49,14 @@ public final class UnifiedSearch {
 
     public static final class Row {
         public final String title, subtitle, source, packageName, authority, action, data, icon, intentQuery;
+        public final String year, rating, genre;
         Row(String title, String subtitle, String source, String packageName, String authority,
-            String action, String data, String icon, String intentQuery) {
+            String action, String data, String icon, String intentQuery,
+            String year, String rating, String genre) {
             this.title = title; this.subtitle = subtitle; this.source = source;
             this.packageName = packageName; this.authority = authority;
             this.action = action; this.data = data; this.icon = icon; this.intentQuery = intentQuery;
+            this.year = year; this.rating = rating; this.genre = genre;
         }
     }
 
@@ -88,8 +91,13 @@ public final class UnifiedSearch {
         PackageManager pm = context.getPackageManager();
         Map<String, Provider> out = new LinkedHashMap<>();
         for (String[] known : KNOWN) {
-            if (zonaOnly && !isZona(known[1])) continue;
-            register(pm, out, known[0], known[1], known[2], null, null, null, null);
+            // Older Zona packages may own the same authority under a different APK ID.
+            // Trust the actual exported provider owner, not the former package guess.
+            ProviderInfo owner = pm.resolveContentProvider(known[0], 0);
+            if (owner == null || !isCinema(pm, owner.packageName)) continue;
+            if (zonaOnly && !isZona(owner.packageName)) continue;
+            register(pm, out, known[0], owner.packageName, label(owner.packageName),
+                    null, null, null, null);
         }
         SearchManager manager = (SearchManager) context.getSystemService(Context.SEARCH_SERVICE);
         if (manager != null) {
@@ -117,7 +125,7 @@ public final class UnifiedSearch {
         String pkg = searchable.getSuggestPackage();
         if (pkg == null && searchable.getSearchActivity() != null)
             pkg = searchable.getSearchActivity().getPackageName();
-        if (!isCinema(pkg) || zonaOnly && !isZona(pkg)) return;
+        if (!isCinema(pm,pkg) || zonaOnly && !isZona(pkg)) return;
         register(pm, out, authority, pkg, label(pkg),
                 searchable.getSuggestPath(), searchable.getSuggestSelection(),
                 searchable.getSuggestIntentAction(), searchable.getSuggestIntentData());
@@ -140,10 +148,15 @@ public final class UnifiedSearch {
         }
     }
 
-    private static boolean isCinema(String pkg) {
+    private static boolean isCinema(PackageManager pm, String pkg) {
         if (pkg == null) return false;
         for (String p : CINEMA_PACKAGES) if (pkg.equals(p)) return true;
-        return false;
+        try {
+            android.content.pm.ApplicationInfo app = pm.getApplicationInfo(pkg, 0);
+            return app.category == android.content.pm.ApplicationInfo.CATEGORY_VIDEO;
+        } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static String label(String pkg) {
@@ -227,10 +240,18 @@ public final class UnifiedSearch {
                 String id = get(cursor, SearchManager.SUGGEST_COLUMN_INTENT_DATA_ID);
                 if (data != null && id != null && !id.isEmpty())
                     data = Uri.parse(data).buildUpon().appendPath(id).build().toString();
-                rows.add(new Row(limit(title,140), limit(subtitle,210),provider.label,
-                        provider.pkg, provider.authority,action,data,
-                        get(cursor, SearchManager.SUGGEST_COLUMN_ICON_1),
-                        pick(get(cursor, SearchManager.SUGGEST_COLUMN_QUERY),query)));
+                // These optional columns are provided by some cinemas. Never infer a
+                // rating or year from the film title or a guessed online database.
+                String year = firstNonEmpty(get(cursor,"year"),get(cursor,"release_year"),
+                        get(cursor,"releaseYear"),get(cursor,"production_year"));
+                String rating = firstNonEmpty(get(cursor,"rating"),get(cursor,"rating_kp"),
+                        get(cursor,"kp_rating"),get(cursor,"rating_imdb"),get(cursor,"imdb_rating"));
+                String genre = firstNonEmpty(get(cursor,"genre"),get(cursor,"genres"));
+                rows.add(new Row(limit(title,140),limit(subtitle,210),provider.label,
+                        provider.pkg,provider.authority,action,data,
+                        get(cursor,SearchManager.SUGGEST_COLUMN_ICON_1),
+                        pick(get(cursor,SearchManager.SUGGEST_COLUMN_QUERY),query),
+                        limit(year,24),limit(rating,30),limit(genre,60)));
             }
         } catch (Exception err) {
             Log.w(TAG, "Query failed: " + provider.authority, err);
@@ -283,6 +304,10 @@ public final class UnifiedSearch {
     }
     private static String limit(String s, int max) {
         return s == null ? "" : s.substring(0, Math.min(max, s.length()));
+    }
+    private static String firstNonEmpty(String... values) {
+        for (String value : values) if (value != null && !value.trim().isEmpty()) return value.trim();
+        return "";
     }
     private static String pick(String first, String alternative) {
         return first == null || first.isEmpty() ? alternative : first;
