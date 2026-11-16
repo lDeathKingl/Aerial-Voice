@@ -21,12 +21,16 @@ public final class ZonaSearch {
         }
     }
     public static Result search(Context context, String rawTitle, boolean onlyZona) {
+        return search(context,rawTitle,onlyZona,false);
+    }
+    public static Result search(Context context, String rawTitle, boolean onlyZona, boolean autoOpenUnique) {
         String title=rawTitle==null?"":rawTitle.trim();
         if(title.isEmpty()) return new Result(false,false,"Название фильма не распознано.");
         try {
             Intent show=new Intent(context,SearchResultsActivity.class)
                     .putExtra(SearchResultsActivity.EXTRA_QUERY,title)
                     .putExtra(SearchResultsActivity.EXTRA_ZONA_ONLY,onlyZona)
+                    .putExtra(SearchResultsActivity.EXTRA_AUTO_OPEN,autoOpenUnique)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(show);
             return new Result(true,false,"Ищу «"+title+"» в "+(onlyZona?"Zona":"установленных кинотеатрах")+".");
