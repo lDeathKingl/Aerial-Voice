@@ -12,9 +12,9 @@ public final class AerialVoiceSession extends VoiceInteractionSession {
     @Override public void onShow(Bundle args, int flags) {
         super.onShow(args, flags);
         try {
-            Intent open=new Intent(getContext(),MainActivity.class)
+            Intent open=new Intent(getContext(),FloatingVoiceActivity.class)
                     .setAction(Intent.ACTION_ASSIST)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
             getContext().startActivity(open);
         } catch(RuntimeException error) {
             Log.e("AerialVoiceSession","System assistant launch unavailable",error);
