@@ -1151,8 +1151,15 @@ public final class MainActivity extends Activity implements SpeechEngine.Listene
         out.append(speech == null ? "Speech engine not initialized" : speech.getAsrDiagnostics()).append("\n\n");
         out.append("Audio source: VOICE_RECOGNITION -> RC In / MIBT.VoiceControl\n");
         out.append("TTS diagnostics: ").append(speech == null ? "not initialized" : speech.getTtsDiagnostics()).append("\n\n");
-        out.append("F5 bridge: requires the small HomeGuard patch in Aerial Korobovo.\n\n");
+        out.append("F5 bridge: HomeGuard Aerial Korobovo or opt-in AerialKeyAccessibilityService.\n");
+        out.append("Accessibility service is NOT enabled automatically.\n\n");
         out.append("Zona: ").append(ZonaSearch.diagnostics(this)).append("\n\n");
+        out.append("Volume: ").append(VolumeController.diagnostics(this)).append("\n\n");
+        java.util.List<UnifiedSearch.Provider> providers = UnifiedSearch.discover(this, false);
+        out.append("Cinema search providers: ").append(providers.size()).append('\n');
+        for (UnifiedSearch.Provider provider : providers)
+            out.append("  • ").append(provider.label).append(" / ").append(provider.authority).append('\n');
+        out.append('\n');
         out.append("Audio input devices:\n");
         AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (audio != null) {
