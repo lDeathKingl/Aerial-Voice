@@ -1,3 +1,13 @@
+## 0.9.1 — compact voice overlay, film metadata and HomeGuard compatibility
+
+- Added translucent FloatingVoiceActivity for push-to-talk, continuous dialogue, GigaChat, RHVoice, commands and shared conversation history.
+- Routed optional Accessibility F5 and system assistant sessions to the small voice UI instead of full-screen MainActivity; old HomeGuard MainActivity intents are forwarded without changing Aerial Korobovo.
+- Safe Windows setup now enables only the optional F5 bridge by default, with an original-settings backup and restore path; system assistant replacement is a separate advanced action.
+- Fixed Zona discovery for multiple package owners of the same search provider authority.
+- Added real provider-supplied film year/rating/genre, a short-lived voice-selectable results list and follow-up "open second" commands.
+- Added best-effort last opened film context without claiming playback, and TTS acceptance checks so unsupported audio cannot hang the floating dialogue.
+- Verified on CI only; actual Xiaomi RC In, HomeGuard, app overlay focus, Zona 3.0.79 and HDMI/CEC remain device-specific.
+
 ## 0.9.0 — unified cinema search, optional global voice and reliable audio controls
 
 - Added real Android ContentProvider search for exported Zona and other cinema sources, plus dynamic SearchManager discovery.
