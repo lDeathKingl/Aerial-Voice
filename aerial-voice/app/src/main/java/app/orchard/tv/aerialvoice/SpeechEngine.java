@@ -16,11 +16,7 @@ import android.speech.tts.Voice;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
-import org.json.JSONObject;
-import org.vosk.Model;
-import org.vosk.Recognizer;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.Locale;
 
@@ -44,7 +40,6 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private final Listener listener;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    private volatile Model model;
     private final GigaAmEngine gigaAmEngine;
     private volatile String selectedAsr = AsrSelector.AUTO;
     private volatile int selectedAudioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION;
@@ -53,8 +48,6 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private volatile String lastAudioRoute = "не проверен";
     private volatile long lastAudioRms;
     private volatile String lastAsrError = "";
-    private volatile boolean modelReady;
-    private volatile boolean modelLoading = true;
     private volatile boolean destroyed;
     private volatile boolean listening;
     private volatile boolean stopRequested;
@@ -90,48 +83,11 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         autoRhVoiceSelected = "auto".equals(ttsPreference) && !requestedTtsEngine.isEmpty();
         initializeTts();
 
-        postStatus("Подготавливаю офлайн-распознавание Vosk…");
-        VoskModelManager.prepare(this.context, new VoskModelManager.Listener() {
-            @Override public void onProgress(String message) {
-                if (!destroyed) postStatus(message);
-            }
+        postStatus(gigaAmEngine.isInstalled()
+                ? "GigaAM v3: офлайн-модель найдена. Готов к записи с RC In."
+                : "GigaAM v3 не установлена. Скопируй офлайн-модель установщиком.");
 
-            @Override public void onReady(File modelDirectory) {
-                if (destroyed) return;
-                Thread loader = new Thread(() -> {
-                    try {
-                        Model loaded = new Model(modelDirectory.getAbsolutePath());
-                        if (destroyed) {
-                            loaded.close();
-                            return;
-                        }
-                        model = loaded;
-                        modelReady = true;
-                        modelLoading = false;
-                        postStatus(gigaAmEngine.isInstalled() ? "Файлы GigaAM v3 обнаружены; Vosk загружен. Работу GigaAM проверим при распознавании." : "Русское офлайн-распознавание Vosk готово; модель GigaAM не установлена.");
-                    } catch (Exception e) {
-                        modelLoading = false;
-                        if (isGigaReady() && !AsrSelector.VOSK.equals(selectedAsr)) {
-                            postStatus("GigaAM v3 доступен. Резервный Vosk не загрузился: " + safeMessage(e));
-                        } else {
-                            postError("Не удалось загрузить модель Vosk: " + safeMessage(e));
-                        }
-                    }
-                }, "AerialVoice-Vosk-Load");
-                loader.start();
-            }
 
-            @Override public void onError(String message) {
-                modelLoading = false;
-                if (!destroyed) {
-                    if (isGigaReady() && !AsrSelector.VOSK.equals(selectedAsr)) {
-                        postStatus("Файлы GigaAM v3 доступны. Резервный Vosk недоступен: " + message);
-                    } else {
-                        postError(message);
-                    }
-                }
-            }
-        });
     }
 
     /** Honors a manual TTS choice. For 'auto', prefer an installed RHVoice Android service. */
@@ -298,31 +254,24 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         main.post(this::restartTts);
     }
 
-    public boolean isVoskReady() { return modelReady && model != null; }
-    public boolean isVoskLoading() { return modelLoading; }
     public boolean isGigaReady() {
         try { return gigaAmEngine.isInstalled(); }
         catch (Throwable error) { return false; }
     }
-    public boolean isModelReady() {
-        return !AsrSelector.choose(selectedAsr, isGigaReady(), isVoskReady()).isEmpty();
-    }
-    public boolean isModelLoading() { return !isModelReady() && modelLoading; }
+    public boolean isModelReady() { return isGigaReady(); }
+    public boolean isModelLoading() { return false; }
     public boolean isListening() { return listening; }
-    public void setAsrEngine(String name) { selectedAsr = AsrSelector.normalized(name); }
-    public String getAsrEngine() { return selectedAsr; }
+    public void setAsrEngine(String ignored) { selectedAsr = AsrSelector.GIGAAM; }
+    public String getAsrEngine() { return AsrSelector.GIGAAM; }
     public void setAudioSource(int source) {
         if (source == MediaRecorder.AudioSource.MIC || source == MediaRecorder.AudioSource.VOICE_RECOGNITION)
             selectedAudioSource = source;
     }
     public int getAudioSource() { return selectedAudioSource; }
     public String getAsrDiagnostics() {
-        String choice = AsrSelector.choose(selectedAsr, isGigaReady(), isVoskReady());
         long freeMiB = context.getFilesDir().getUsableSpace() / (1024L * 1024L);
-        return "Режим: " + selectedAsr
-                + "\nGigaAM: " + (isGigaReady() ? "модель доступна" : "модель отсутствует")
-                + "\nVosk: " + (isVoskReady() ? "готов" : modelLoading ? "загружается" : "не готов")
-                + "\nАктивный движок: " + (choice.isEmpty() ? "недоступен" : choice)
+        return "Режим: только офлайн GigaAM v3 E2E CTC INT8"
+                + "\nGigaAM: " + (isGigaReady() ? "файлы модели найдены" : "модель отсутствует")
                 + "\nИсточник AudioRecord: " + (selectedAudioSource == MediaRecorder.AudioSource.MIC ? "MIC" : "VOICE_RECOGNITION")
                 + "\nПоследнее распознавание: " + lastAsrEngine
                 + "\nОбработка после записи: " + lastAsrMillis + " мс"
@@ -386,23 +335,16 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     /** Hands-free capture ends a phrase after speech followed by silence, or times out safely. */
     public synchronized void startListening(boolean handsFree) {
         if (destroyed || listening) return;
-        String engine = AsrSelector.choose(selectedAsr, isGigaReady(), isVoskReady());
-        if (engine.isEmpty()) {
-            String detail = AsrSelector.GIGAAM.equals(selectedAsr)
-                    ? "GigaAM v3 отсутствует. Проверь офлайн-модель."
-                    : AsrSelector.VOSK.equals(selectedAsr) && modelLoading
-                    ? "Vosk ещё загружается."
-                    : "Выбранный движок недоступен. Проверь установку моделей через ПК.";
-            postError(detail);
+        if (!isGigaReady()) {
+            postError("GigaAM v3 не установлена. Запусти офлайн-установщик с ПК.");
             return;
         }
         stopRequested = false;
         deliverResult = true;
         handsFreeCapture = handsFree;
         listening = true;
-        boolean allowFallback = AsrSelector.AUTO.equals(selectedAsr);
         int chosenSource = selectedAudioSource;
-        captureThread = new Thread(() -> captureFromRemoteMic(engine, allowFallback, chosenSource), "AerialVoice-ASR-RCIn");
+        captureThread = new Thread(() -> captureFromRemoteMic(chosenSource), "AerialVoice-GigaAM-RCIn");
         captureThread.start();
     }
 
@@ -425,28 +367,21 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         }
     }
 
-    /** Records from the verified remote input. Never silently switches to TV's MIC. */
-    private void captureFromRemoteMic(String selectedEngine, boolean allowFallback, int audioSource) {
+    /** Only RC In / MIBT.VoiceControl is accepted: no silent TV microphone fallback. */
+    private void captureFromRemoteMic(int audioSource) {
         AudioRecord record = null;
-        Recognizer streamingVosk = null;
         String failure = null;
-        StringBuilder completed = new StringBuilder();
+        String result = "";
         boolean routeConfirmed = false;
         boolean voiceDetected = false;
         boolean noSpeechTimeout = false;
-        String usedEngine = selectedEngine;
-        final boolean gigaPrimary = AsrSelector.GIGAAM.equals(selectedEngine);
-        final short[] buffered = gigaPrimary ? new short[SAMPLE_RATE * 35] : null;
+        final short[] buffered = new short[SAMPLE_RATE * 35];
         int bufferedCount = 0;
         final boolean handsFreeSession = handsFreeCapture;
         lastAsrError = "";
         lastAudioRms = 0;
         long lastVoiceAt = android.os.SystemClock.elapsedRealtime();
         try {
-            if (!gigaPrimary) {
-                if (model == null) throw new IOException("Vosk не загружен.");
-                streamingVosk = new Recognizer(model, SAMPLE_RATE);
-            }
             AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
             if (audioManager == null) throw new IOException("AudioManager недоступен.");
             AudioDeviceInfo remoteInput = findRemoteMic(audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS));
@@ -467,16 +402,14 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                     .setAudioFormat(format)
                     .setBufferSizeInBytes(Math.max(minimumBuffer * 2, FRAME_SAMPLES * 4))
                     .build();
-            if (record.getState() != AudioRecord.STATE_INITIALIZED) {
+            if (record.getState() != AudioRecord.STATE_INITIALIZED)
                 throw new IOException("AudioRecord не инициализировался.");
-            }
             boolean requested = record.setPreferredDevice(remoteInput);
             Log.i(TAG, "RC In preferred=" + describe(remoteInput) + "; accepted=" + requested);
             activeRecord = record;
             record.startRecording();
-            if (record.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+            if (record.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING)
                 throw new IOException("Android не запустил запись.");
-            }
             short[] samples = new short[FRAME_SAMPLES];
             long routeDeadline = android.os.SystemClock.elapsedRealtime() + 6000L;
             AudioDeviceInfo actual = null;
@@ -484,103 +417,67 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 actual = record.getRoutedDevice();
                 if (isRemoteMic(actual, remoteInput)) { routeConfirmed = true; break; }
                 int read = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
-                if (read < 0 && !stopRequested) throw new IOException("Ошибка ожидания RC In: " + read);
+                if (read < 0 && !stopRequested)
+                    throw new IOException("Ошибка ожидания RC In: " + read);
             }
-            if (stopRequested) return;
             lastAudioRoute = describe(actual);
-            if (!routeConfirmed) {
+            if (!routeConfirmed && !stopRequested)
                 throw new IOException("Android не подтвердил RC In. Реальный вход: " + describe(actual));
-            }
-            postStatus("RC In через " + (audioSource == MediaRecorder.AudioSource.MIC ? "MIC" : "VOICE_RECOGNITION") + ": записываю (" + (gigaPrimary ? "GigaAM" : "Vosk") + ")…");
-            long startedAt = android.os.SystemClock.elapsedRealtime();
-            lastVoiceAt = startedAt;
-            String lastPartial = "";
-            long lastUiUpdate = 0L;
-            while (!stopRequested) {
-                int count = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
-                if (count < 0) {
-                    if (!stopRequested) throw new IOException("Ошибка чтения аудио: " + count);
-                    break;
-                }
-                if (count == 0) continue;
-                lastAudioRms = rms(samples, count);
-                if (handsFreeSession) {
-                    long now = android.os.SystemClock.elapsedRealtime();
-                    if (lastAudioRms >= 140L) {
-                        voiceDetected = true;
-                        lastVoiceAt = now;
-                    } else if (!voiceDetected && now - startedAt >= 12000L) {
-                        noSpeechTimeout = true;
-                        deliverResult = false;
-                        stopRequested = true;
-                        break;
-                    } else if (voiceDetected && now - lastVoiceAt >= 1350L) {
-                        stopRequested = true;
+            if (routeConfirmed) {
+                postStatus("RC In: запись для GigaAM v3 (" +
+                        (audioSource == MediaRecorder.AudioSource.MIC ? "MIC" : "VOICE_RECOGNITION") + ")…");
+                long startedAt = android.os.SystemClock.elapsedRealtime();
+                lastVoiceAt = startedAt;
+                while (!stopRequested) {
+                    int count = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
+                    if (count < 0) {
+                        if (!stopRequested) throw new IOException("Ошибка чтения аудио: " + count);
                         break;
                     }
-                }
-                if (gigaPrimary) {
-                    if (bufferedCount + count > buffered.length) {
-                        throw new IOException("Фраза длиннее 35 секунд. Повтори её короче.");
-                    }
-                    System.arraycopy(samples, 0, buffered, bufferedCount, count);
-                    bufferedCount += count;
-                } else if (streamingVosk != null) {
-                    if (streamingVosk.acceptWaveForm(samples, count)) {
-                        appendText(completed, readJsonText(streamingVosk.getResult(), "text"));
-                    } else {
+                    if (count == 0) continue;
+                    lastAudioRms = rms(samples, count);
+                    if (handsFreeSession) {
                         long now = android.os.SystemClock.elapsedRealtime();
-                        if (now - lastUiUpdate >= 220L) {
-                            String partial = joinText(completed.toString(),
-                                    readJsonText(streamingVosk.getPartialResult(), "partial"));
-                            if (!partial.equals(lastPartial)) {
-                                lastPartial = partial;
-                                postPartial(partial);
-                            }
-                            lastUiUpdate = now;
+                        if (lastAudioRms >= 140L) {
+                            voiceDetected = true;
+                            lastVoiceAt = now;
+                        } else if (!voiceDetected && now - startedAt >= 12000L) {
+                            noSpeechTimeout = true;
+                            deliverResult = false;
+                            break;
+                        } else if (voiceDetected && now - lastVoiceAt >= 1350L) {
+                            break;
                         }
                     }
+                    if (bufferedCount + count > buffered.length)
+                        throw new IOException("Фраза длиннее 35 секунд. Повтори её короче.");
+                    System.arraycopy(samples, 0, buffered, bufferedCount, count);
+                    bufferedCount += count;
                 }
             }
-            // Release the microphone before expensive GigaAM decoding.
+            // Android input must be released before decoding a potentially long utterance.
             activeRecord = null;
             if (record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) record.stop();
             record.release();
             record = null;
-            if (deliverResult && routeConfirmed) {
+            if (deliverResult && routeConfirmed && bufferedCount > 0) {
                 long inferenceStart = android.os.SystemClock.elapsedRealtime();
-                if (gigaPrimary && bufferedCount > 0) {
-                    try {
-                        postStatus("GigaAM v3: распознаю офлайн…");
-                        String phrase = gigaAmEngine.transcribe(buffered, bufferedCount);
-                        if (phrase.isEmpty()) throw new IOException("GigaAM вернул пустой результат.");
-                        completed.append(phrase);
-                        usedEngine = "GigaAM v3";
-                    } catch (Throwable gigaError) {
-                        String message = gigaError.getMessage();
-                        lastAsrError = "GigaAM: " + (message == null ? gigaError.getClass().getSimpleName() : message);
-                        Log.e(TAG, "GigaAM failed; attempting Vosk fallback", gigaError);
-                        if (allowFallback && isVoskReady()) {
-                            postStatus("GigaAM не сработал. Повторно распознаю через Vosk…");
-                            String phrase = recognizeBufferedWithVosk(buffered, bufferedCount);
-                            if (phrase.isEmpty()) throw new IOException("Vosk тоже не распознал речь.");
-                            completed.append(phrase);
-                            usedEngine = "Vosk (резерв)";
-                        } else {
-                            throw new IOException("GigaAM не распознал речь: " + lastAsrError);
-                        }
-                    }
-                } else if (streamingVosk != null) {
-                    appendText(completed, readJsonText(streamingVosk.getFinalResult(), "text"));
-                    usedEngine = "Vosk";
+                postStatus("GigaAM v3: распознаю офлайн…");
+                try {
+                    result = gigaAmEngine.transcribe(buffered, bufferedCount).trim();
+                } catch (Throwable error) {
+                    lastAsrError = "GigaAM: " + error.getClass().getSimpleName() +
+                            (error.getMessage() == null ? "" : ": " + error.getMessage());
+                    Log.e(TAG, "GigaAM offline recognition failed", error);
+                    failure = lastAsrError;
                 }
                 lastAsrMillis = android.os.SystemClock.elapsedRealtime() - inferenceStart;
-                lastAsrEngine = usedEngine;
+                lastAsrEngine = "GigaAM v3";
             }
-        } catch (Exception e) {
-            if (!stopRequested || deliverResult) failure = safeMessage(e);
-            lastAsrError = safeMessage(e);
-            Log.e(TAG, "Audio capture/ASR error", e);
+        } catch (Exception error) {
+            if (!stopRequested || deliverResult) failure = safeMessage(error);
+            lastAsrError = safeMessage(error);
+            Log.e(TAG, "RC In capture failed", error);
         } finally {
             activeRecord = null;
             if (record != null) {
@@ -589,49 +486,22 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 } catch (Exception ignored) { }
                 try { record.release(); } catch (Exception ignored) { }
             }
-            if (streamingVosk != null) {
-                try { streamingVosk.close(); } catch (Exception ignored) { }
-            }
             listening = false;
-            final String result = completed.toString().trim();
+            final String phrase = result;
             final String error = failure;
             final boolean timedOut = noSpeechTimeout;
-            final boolean shouldNotify = !destroyed && (deliverResult || timedOut);
+            final boolean notify = !destroyed && (deliverResult || timedOut);
             handsFreeCapture = false;
             if (destroyed) closeModelIfIdle();
-            if (shouldNotify) {
+            if (notify) {
                 main.post(() -> {
                     if (destroyed) return;
                     if (timedOut) listener.onNoSpeechTimeout();
-                    else if (!result.isEmpty()) listener.onFinal(result);
+                    else if (!phrase.isEmpty()) listener.onFinal(phrase);
                     else if (error != null && !error.isEmpty()) listener.onError("Распознавание: " + error);
                     else listener.onError("Речь не распознана. Удерживай кнопку микрофона во время фразы.");
                 });
             }
-        }
-    }
-
-    private String recognizeBufferedWithVosk(short[] samples, int count) throws IOException {
-        Model current = model;
-        if (current == null) throw new IOException("Резервная модель Vosk не загружена.");
-        Recognizer decoder = null;
-        StringBuilder result = new StringBuilder();
-        try {
-            decoder = new Recognizer(current, SAMPLE_RATE);
-            final int blockSize = 3200;
-            for (int start = 0; start < count; start += blockSize) {
-                int length = Math.min(blockSize, count - start);
-                short[] frame = java.util.Arrays.copyOfRange(samples, start, start + length);
-                if (decoder.acceptWaveForm(frame, length)) {
-                    appendText(result, readJsonText(decoder.getResult(), "text"));
-                }
-            }
-            appendText(result, readJsonText(decoder.getFinalResult(), "text"));
-            return result.toString().trim();
-        } catch (Exception error) {
-            throw new IOException("Ошибка резервного Vosk: " + safeMessage(error), error);
-        } finally {
-            if (decoder != null) try { decoder.close(); } catch (Exception ignored) { }
         }
     }
 
@@ -668,25 +538,6 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         if (device == null) return "не определён";
         return String.valueOf(device.getProductName()) + " (id=" + device.getId()
                 + ", type=" + device.getType() + ")";
-    }
-
-    private String readJsonText(String json, String field) {
-        if (json == null || json.isEmpty()) return "";
-        try { return new JSONObject(json).optString(field, "").trim(); }
-        catch (Exception ignored) { return ""; }
-    }
-
-    private void appendText(StringBuilder target, String value) {
-        if (value == null || value.trim().isEmpty()) return;
-        String text = value.trim();
-        if (target.length() == 0) target.append(text);
-        else if (!target.toString().endsWith(text)) target.append(' ').append(text);
-    }
-
-    private String joinText(String first, String second) {
-        if (first == null || first.isEmpty()) return second == null ? "" : second;
-        if (second == null || second.isEmpty()) return first;
-        return first + " " + second;
     }
 
     public void speak(String text) {
@@ -780,12 +631,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private synchronized void closeModelIfIdle() {
         if (listening) return;
         gigaAmEngine.close();
-        Model current = model;
-        model = null;
-        modelReady = false;
-        if (current != null) {
-            try { current.close(); } catch (Exception ignored) { }
-        }
+
     }
 
     private void postStatus(String message) {
