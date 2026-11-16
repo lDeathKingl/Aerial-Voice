@@ -11,7 +11,7 @@ public class VolumeControllerTest {
     }
     @Test public void truthfulResult() {
         assertTrue(VolumeController.describe(5,5,15,80,12).contains("НЕ изменилась"));
-        assertTrue(VolumeController.describe(5,9,15,80,12).contains("не до 80%"));
+        assertTrue(VolumeController.describe(5,9,15,80,12).contains("а не 80%"));
         assertTrue(VolumeController.describe(5,12,15,80,12).contains("Android показывает"));
     }
 }
