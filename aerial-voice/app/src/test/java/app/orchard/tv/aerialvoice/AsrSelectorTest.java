@@ -4,18 +4,16 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 
 public class AsrSelectorTest {
-    @Test public void autoPrefersGigaAm() {
-        assertEquals("gigaam", AsrSelector.choose("auto", true, true));
-        assertEquals("vosk", AsrSelector.choose("auto", false, true));
-        assertEquals("", AsrSelector.choose("auto", false, false));
+    @Test public void legacyPreferencesAlwaysMigrateToGigaAm() {
+        assertEquals("gigaam", AsrSelector.normalized("auto"));
+        assertEquals("gigaam", AsrSelector.normalized("vosk"));
+        assertEquals("gigaam", AsrSelector.normalized("nonsense"));
+        assertEquals("gigaam", AsrSelector.normalized(null));
     }
-    @Test public void manualChoiceNeverSilentlySwitches() {
+    @Test public void onlyAvailableGigaAmIsSelected() {
+        assertEquals("gigaam", AsrSelector.choose("auto", true, false));
+        assertEquals("gigaam", AsrSelector.choose("vosk", true, true));
         assertEquals("", AsrSelector.choose("gigaam", false, true));
-        assertEquals("", AsrSelector.choose("vosk", true, false));
-        assertEquals("vosk", AsrSelector.choose("vosk", true, true));
-    }
-    @Test public void invalidPreferenceDefaultsToAuto() {
-        assertEquals("auto", AsrSelector.normalized("nonsense"));
-        assertEquals("gigaam", AsrSelector.choose(null, true, false));
+        assertEquals("", AsrSelector.choose(null, false, false));
     }
 }
