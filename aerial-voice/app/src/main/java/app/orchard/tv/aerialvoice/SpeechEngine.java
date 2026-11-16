@@ -43,6 +43,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
     private final GigaAmEngine gigaAmEngine;
     private volatile String selectedAsr = AsrSelector.GIGAAM;
     private volatile int selectedAudioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION;
+    private volatile long silenceTimeoutMs = 1350L;
     private volatile String lastAsrEngine = "ещё не использовался";
     private volatile long lastAsrMillis;
     private volatile String lastAudioRoute = "не проверен";
@@ -268,11 +269,16 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
             selectedAudioSource = source;
     }
     public int getAudioSource() { return selectedAudioSource; }
+    public void setSilenceTimeoutMs(long value) {
+        silenceTimeoutMs = Math.max(850L,Math.min(2600L,value));
+    }
+    public long getSilenceTimeoutMs() { return silenceTimeoutMs; }
     public String getAsrDiagnostics() {
         long freeMiB = context.getFilesDir().getUsableSpace() / (1024L * 1024L);
         return "Режим: только офлайн GigaAM v3 E2E CTC INT8"
                 + "\nGigaAM: " + (isGigaReady() ? "файлы модели найдены" : "модель отсутствует")
                 + "\nИсточник AudioRecord: " + (selectedAudioSource == MediaRecorder.AudioSource.MIC ? "MIC" : "VOICE_RECOGNITION")
+                + "\nПауза для автоотправки: " + silenceTimeoutMs + " мс"
                 + "\nПоследнее распознавание: " + lastAsrEngine
                 + "\nОбработка после записи: " + lastAsrMillis + " мс"
                 + "\nАудиовход: " + lastAudioRoute
@@ -373,14 +379,12 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
         String failure = null;
         String result = "";
         boolean routeConfirmed = false;
-        boolean voiceDetected = false;
         boolean noSpeechTimeout = false;
         final short[] buffered = new short[SAMPLE_RATE * 35];
         int bufferedCount = 0;
         final boolean handsFreeSession = handsFreeCapture;
         lastAsrError = "";
         lastAudioRms = 0;
-        long lastVoiceAt = android.os.SystemClock.elapsedRealtime();
         try {
             AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
             if (audioManager == null) throw new IOException("AudioManager недоступен.");
@@ -427,7 +431,7 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 postStatus("RC In: запись для GigaAM v3 (" +
                         (audioSource == MediaRecorder.AudioSource.MIC ? "MIC" : "VOICE_RECOGNITION") + ")…");
                 long startedAt = android.os.SystemClock.elapsedRealtime();
-                lastVoiceAt = startedAt;
+                SpeechEndpointDetector endpoint = new SpeechEndpointDetector(startedAt,silenceTimeoutMs);
                 while (!stopRequested) {
                     int count = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
                     if (count < 0) {
@@ -438,16 +442,13 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                     lastAudioRms = rms(samples, count);
                     if (handsFreeSession) {
                         long now = android.os.SystemClock.elapsedRealtime();
-                        if (lastAudioRms >= 140L) {
-                            voiceDetected = true;
-                            lastVoiceAt = now;
-                        } else if (!voiceDetected && now - startedAt >= 12000L) {
+                        endpoint.receive(lastAudioRms,now);
+                        if (endpoint.noSpeechTimeout(now)) {
                             noSpeechTimeout = true;
                             deliverResult = false;
                             break;
-                        } else if (voiceDetected && now - lastVoiceAt >= 1350L) {
-                            break;
                         }
+                        if (endpoint.phraseDone(now)) break;
                     }
                     if (bufferedCount + count > buffered.length)
                         throw new IOException("Фраза длиннее 35 секунд. Повтори её короче.");
