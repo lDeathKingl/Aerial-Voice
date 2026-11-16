@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="app.orchard.tv.aerialvoice.AerialVoiceSessionService"
+    android:recognitionService="app.orchard.tv.aerialvoice.AerialRecognitionService"
+    android:settingsActivity="app.orchard.tv.aerialvoice.MainActivity"
+    android:supportsAssist="true"
+    android:supportsLocalInteraction="true" />
