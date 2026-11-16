@@ -13,15 +13,15 @@ function Invoke-Adb([string[]]$Arguments) {
  return @($output)
 }
 function Get-Setting([string]$key) {
- $value=(@(Invoke-Adb @('shell','settings','get','secure',$key)) -join '').Trim()
+ $value=(@(Invoke-Adb -Arguments @('shell','settings','get','secure',$key)) -join '').Trim()
  if ($value -eq 'null') { return '' }
  return $value
 }
 function Put-Setting([string]$key,[string]$value) {
  if ([string]::IsNullOrEmpty($value)) {
-   [void](Invoke-Adb @('shell','settings','delete','secure',$key))
+   [void](Invoke-Adb -Arguments @('shell','settings','delete','secure',$key))
  } else {
-   [void](Invoke-Adb @('shell','settings','put','secure',$key,$value))
+   [void](Invoke-Adb -Arguments @('shell','settings','put','secure',$key,$value))
  }
 }
 try {
@@ -29,7 +29,7 @@ try {
  if($LASTEXITCODE -ne 0){throw 'Android Platform Tools (adb) not found in PATH.'}
  & adb connect $Tv | Out-Host
  if($LASTEXITCODE -ne 0){throw 'ADB connection failed.'}
- $pkglist=(@(Invoke-Adb @('shell','pm','list','packages')) -join [Environment]::NewLine)
+ $pkglist=(@(Invoke-Adb -Arguments @('shell','pm','list','packages')) -join [Environment]::NewLine)
  $pkg=''
  if($pkglist -match '(?m)^package:app\.orchard\.tv\.aerialvoice\.mictest06\s*$') {
    $pkg='app.orchard.tv.aerialvoice.mictest06'
@@ -51,6 +51,8 @@ try {
    $saved['tv']=$Tv
    $saved['installedPackage']=$pkg
    $saved['savedAtUtc']=[DateTime]::UtcNow.ToString('o')
+   $roleBefore=@(& adb -s $Tv shell cmd role get-role-holders android.app.role.ASSISTANT 2>$null)
+   $saved['originalRoleHolders']=($roleBefore -join ' ').Trim()
    $json=ConvertTo-Json -InputObject $saved -Depth 4
    [IO.File]::WriteAllText($backupPath,$json,(New-Object System.Text.UTF8Encoding($false)))
    Write-Host "Original system settings backed up: $backupPath" -ForegroundColor Green
@@ -60,6 +62,7 @@ try {
    try {
      $role=& adb -s $Tv shell cmd role add-role-holder android.app.role.ASSISTANT $pkg 2>&1
      Write-Host ('RoleManager: '+($role -join ' '))
+     if($LASTEXITCODE -ne 0){Write-Warning 'RoleManager returned nonzero; secure-settings fallback will be attempted.'}
    }catch{Write-Warning 'RoleManager ASSISTANT unavailable; using secure-settings fallback.'}
    Put-Setting 'assistant' $component
    Put-Setting 'voice_interaction_service' $vis
@@ -78,7 +81,16 @@ try {
    if($saved.tv -ne $Tv){throw "This backup is for $($saved.tv), not $Tv"}
    foreach($key in $keys){Put-Setting $key ([string]$saved.$key)}
    Write-Host 'Restored original secure settings.' -ForegroundColor Green
-   Write-Host 'Android RoleManager may retain a role assignment; inspect default-assistant settings.'
+   # Restore the explicit assistant role when RoleManager permits it.
+   & adb -s $Tv shell cmd role remove-role-holder android.app.role.ASSISTANT $pkg 2>$null | Out-Null
+   $oldRole=[string]$saved.originalRoleHolders
+   if($oldRole -match '(com\.[a-zA-Z0-9_\.]+)') {
+     $prior=$Matches[1]
+     if($prior -ne $pkg) {
+       & adb -s $Tv shell cmd role add-role-holder android.app.role.ASSISTANT $prior 2>$null | Out-Null
+     }
+   }
+   Write-Host 'Assistant role restoration attempted; check Android default-assistant settings.'
  }
  foreach($key in $keys){Write-Host ($key+' = '+(Get-Setting $key))}
 }catch{
