@@ -78,6 +78,10 @@ public final class CommandRouter {
         String q = normalize(spoken);
         if (q.isEmpty()) return new Result(false, "Не удалось разобрать команду.");
 
+        // Follow-up after the unified cinema screen: "открой второй результат".
+        Result chosen=FilmSelectionStore.handleVoice(context,q);
+        if(chosen!=null)return chosen;
+
         Matcher volumeMatch = Pattern.compile("(?:громкость|звук)\\s*(?:на\\s*)?(\\d{1,3})").matcher(q);
         if (volumeMatch.find()) {
             int percent;
@@ -197,7 +201,10 @@ public final class CommandRouter {
     }
 
     private static Result searchFilm(Context context, String title, boolean onlyZona) {
-        ZonaSearch.Result searched = ZonaSearch.search(context, title, onlyZona);
+        String query=title == null ? "" : title.trim();
+        boolean autoOpen=query.matches("(?s).+\\s+и\\s+(?:открой|включи|покажи)(?:\\s+(?:его|её|фильм))?\\s*");
+        if(autoOpen)query=query.replaceFirst("(?i)\\s+и\\s+(?:открой|включи|покажи)(?:\\s+(?:его|её|фильм))?\\s*$","").trim();
+        ZonaSearch.Result searched = ZonaSearch.search(context, query, onlyZona, autoOpen);
         return new Result(true, searched.message, searched.opened);
     }
 
