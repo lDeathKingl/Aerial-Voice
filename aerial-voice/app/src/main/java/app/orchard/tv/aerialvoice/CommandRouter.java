@@ -1,7 +1,6 @@
 package app.orchard.tv.aerialvoice;
 
 import android.app.Activity;
-import android.app.SearchManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -107,10 +106,27 @@ public final class CommandRouter {
             if (audio != null && android.os.Build.VERSION.SDK_INT >= 23) audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI);
             return new Result(true, "Звук включён.");
         }
-        Matcher search = Pattern.compile("^(?:найди фильм|найди сериал|поищи фильм|поищи|найди|поиск)\\s+(.+)$").matcher(q);
+        // Phrases such as "найди в Зоне фильм Дюна" or "найди Дюну в Zona".
+        Matcher zonaFirst = Pattern.compile(
+                "^(?:найди|поищи|покажи|поиск)\\s+(?:в\\s+)?(?:зоне|zona)\\s+(?:фильм\\s+|сериал\\s+)?(.+)$")
+                .matcher(q);
+        if (zonaFirst.find()) {
+            String title = zonaFirst.group(1).trim();
+            if (!title.isEmpty()) return searchFilm(context, title, true);
+        }
+        Matcher zonaLast = Pattern.compile(
+                "^(?:найди|поищи|покажи|поиск)\\s+(?:фильм\\s+|сериал\\s+)?(.+?)\\s+в\\s+(?:зоне|zona)$")
+                .matcher(q);
+        if (zonaLast.find()) {
+            String title = zonaLast.group(1).trim();
+            if (!title.isEmpty()) return searchFilm(context, title, true);
+        }
+        Matcher search = Pattern.compile(
+                "^(?:найди фильм|найди сериал|поищи фильм|поищи сериал|поищи|найди|поиск)\\s+(.+)$")
+                .matcher(q);
         if (search.find()) {
             String title = search.group(1).trim();
-            if (!title.isEmpty()) return searchFilm(context, title);
+            if (!title.isEmpty()) return searchFilm(context, title, false);
         }
 
         Matcher hdmi = Pattern.compile("(?:открой|включи|переключи(?:сь)?(?: на)?|переключи источник на)\\s*(?:hdmi|хдми)\\s*(\\d+)").matcher(q);
@@ -191,32 +207,9 @@ public final class CommandRouter {
         return new Result(false, "");
     }
 
-    private static Result searchFilm(Context context, String title) {
-        String[] packages = {"top.rootu.lampa", "mobi.zona", "ru.kinopoisk.tv"};
-        for (String pkg : packages) {
-            try {
-                Intent search = new Intent(Intent.ACTION_SEARCH)
-                        .setPackage(pkg)
-                        .putExtra(SearchManager.QUERY, title)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                if (search.resolveActivity(context.getPackageManager()) != null) {
-                    context.startActivity(search);
-                    return new Result(true, "Передаю поиск фильма «" + title + "» в приложение.");
-                }
-            } catch (Exception ignored) { }
-        }
-        for (String pkg : packages) {
-            try {
-                Intent launch = context.getPackageManager().getLaunchIntentForPackage(pkg);
-                if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(launch);
-                    return new Result(true, "Открыл приложение для поиска фильма «" + title
-                            + "». Если поиск не открылся сам, воспользуйся поиском внутри приложения.");
-                }
-            } catch (Exception ignored) { }
-        }
-        return new Result(true, "Не найдено установленное приложение для поиска фильмов. Установи Lampa, Zona или Кинопоиск.");
+    private static Result searchFilm(Context context, String title, boolean onlyZona) {
+        ZonaSearch.Result searched = ZonaSearch.search(context, title, onlyZona);
+        return new Result(true, searched.message);
     }
 
     private static void dispatchMedia(Context context, int code) {
