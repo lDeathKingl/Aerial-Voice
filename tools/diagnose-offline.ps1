@@ -9,15 +9,19 @@ if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
 & adb connect $Tv | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Не удалось подключиться к ТВ: $Tv" }
 $report = New-Object System.Collections.Generic.List[string]
-$report.Add("AERIAL VOICE 0.6.3 DIAGNOSTICS")
+$report.Add("AERIAL VOICE 0.8.1 DIAGNOSTICS")
 $report.Add("Date: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
 $report.Add("TV: " + $Tv)
 $report.Add("")
 $report.Add("PACKAGES:")
-foreach ($name in @($Package, "app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.korobovo")) {
+foreach ($name in @($Package, "app.orchard.tv.aerialvoice.mictest", "app.orchard.tv.korobovo", "mobi.zona", "ru.zona")) {
   $dump = @(& adb -s $Tv shell dumpsys package $name 2>$null)
   $report.Add($name + " -> " + ((@($dump | Select-String -Pattern 'versionName=|versionCode=' | Select-Object -First 2) | ForEach-Object { $_.ToString().Trim() }) -join "; "))
 }
+$report.Add("")
+$report.Add("ZONA SEARCH ACTIVITY:")
+$zonaQuery = @(& adb -s $Tv shell cmd package query-activities -a android.intent.action.SEARCH -p mobi.zona 2>$null)
+$report.Add(($zonaQuery -join [Environment]::NewLine))
 $report.Add("")
 $report.Add("INSTALLED RHVOICE PACKAGES:")
 $packages = @(& adb -s $Tv shell pm list packages 2>$null)
@@ -36,13 +40,13 @@ $report.Add((@(& adb -s $Tv shell df -k /data 2>$null) | Select-Object -Last 2) 
 $report.Add("")
 $report.Add("MODEL FILES:")
 $remote = "/sdcard/Android/data/$Package/files/offline-models"
-foreach ($path in @("gigaam-v3/model.int8.onnx", "gigaam-v3/tokens.txt", "vosk/vosk-model-small-ru-0.22.zip")) {
+foreach ($path in @("gigaam-v3/model.int8.onnx", "gigaam-v3/tokens.txt")) {
   $result = @(& adb -s $Tv shell ls -l "$remote/$path" 2>$null)
   $report.Add($path + ": " + ($result -join " "))
 }
 $report.Add("")
 $report.Add("AUDIO ROUTING / RECOGNITION LOGS (last 200 matching lines):")
-$log = @(& adb -s $Tv logcat -d -v brief -s AerialVoiceSpeech:V AerialVoiceVosk:V GigaAM:V '*:S' 2>$null)
+$log = @(& adb -s $Tv logcat -d -v brief -s AerialVoiceSpeech:V GigaAM:V '*:S' 2>$null)
 $log = @($log | Select-Object -Last 200 | ForEach-Object {
   $line = $_.ToString()
   $line = $line -replace '(?i)(bearer|authorization|api[_-]?key)[\s:=]+\S+', '$1=[REDACTED]'
