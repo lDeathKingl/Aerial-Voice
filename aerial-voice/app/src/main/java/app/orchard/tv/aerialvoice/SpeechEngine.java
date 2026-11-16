@@ -541,23 +541,25 @@ public final class SpeechEngine implements TextToSpeech.OnInitListener {
                 + ", type=" + device.getType() + ")";
     }
 
-    public void speak(String text) {
-        if (text == null || text.trim().isEmpty()) return;
+    /** Returns true if Android TTS accepted the utterance; playback is still asynchronous. */
+    public boolean speak(String text) {
+        if (text == null || text.trim().isEmpty()) return false;
         if (tts == null || !ttsReady) {
             postStatus("Ответ получен, но русская озвучка пока не готова. " + getTtsDiagnostics());
-            return;
+            return false;
         }
         String spoken = text.replaceAll("(?s)\\x60\\x60\\x60.*?\\x60\\x60\\x60", "код")
                 .replaceAll("https?://\\S+", "ссылка")
                 .replaceAll("[*_#~]", "")
                 .replaceAll("\\s+", " ")
                 .trim();
-        if (spoken.isEmpty()) return;
+        if (spoken.isEmpty()) return false;
         int result = tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null,
                 "aerial-voice-answer-" + System.currentTimeMillis());
         if (result == TextToSpeech.ERROR) {
             postStatus("Android TTS вернул ERROR при запуске озвучки. " + getTtsDiagnostics());
         }
+        return result == TextToSpeech.SUCCESS;
     }
 
     @Override public void onInit(int status) {
